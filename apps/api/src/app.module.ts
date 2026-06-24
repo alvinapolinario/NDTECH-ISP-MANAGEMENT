@@ -52,6 +52,8 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { CollectorSyncModule } from './collector-sync/collector-sync.module';
 import { IntegrationSettingsModule } from './integration-settings/integration-settings.module';
 import { SmsModule } from './sms/sms.module';
+import { SwitchDevicesModule } from './switch-devices/switch-devices.module';
+import { NetworkSnmpSchedulerModule } from './snmp/network-snmp-scheduler.module';
 
 @Module({
   imports: [
@@ -84,6 +86,8 @@ import { SmsModule } from './sms/sms.module';
     CollectionsModule,
     OltDevicesModule,
     OnuDevicesModule,
+    SwitchDevicesModule,
+    NetworkSnmpSchedulerModule,
     NetworkMonitoringModule,
     NetworkAlertsModule,
     InventoryCategoriesModule,

@@ -7,13 +7,22 @@ const rootEnvFile =
 
 config({ path: resolve(__dirname, "../../", rootEnvFile) });
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "/backend";
 const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? apiUrl;
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["10.250.106.199", "172.27.201.182", "localhost", "127.0.0.1"],
   env: {
     NEXT_PUBLIC_API_URL: apiUrl,
     NEXT_PUBLIC_SOCKET_URL: socketUrl,
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/backend/:path*",
+        destination: "http://api:4000/:path*",
+      },
+    ];
   },
 };
 

@@ -76,7 +76,20 @@ enum NetworkMonitorDeviceType {
   mikrotik_router
   olt_device
   onu_device
+  switch_device
   other
+}
+
+enum SwitchVendor {
+  mikrotik
+  unifi
+  edgeswitch
+}
+
+enum SwitchDeviceStatus {
+  active
+  inactive
+  maintenance
 }
 
 enum NetworkMonitorMethod {
@@ -982,9 +995,13 @@ model OltDevice {
   uplinkPortCount Int             @default(0) @map("uplink_port_count")
   snmpVersion    SnmpVersion      @default(v2c) @map("snmp_version")
   snmpCommunity  String?          @map("snmp_community")
+  snmpPort       Int              @default(161) @map("snmp_port")
   status         OltDeviceStatus  @default(active)
   location       String?
   notes          String?          @db.Text
+  sysDescr       String?          @map("sys_descr") @db.Text
+  sysName        String?          @map("sys_name")
+  uptimeSeconds  Int?             @map("uptime_seconds")
   lastPolledAt   DateTime?        @map("last_polled_at")
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
@@ -1024,9 +1041,52 @@ model OnuDevice {
   customer               Customer?       @relation(fields: [customerId], references: [id])
   subscription           Subscription?   @relation(fields: [subscriptionId], references: [id])
   monitoringTargets      NetworkMonitoringTarget[]
+  signalLogs             OnuSignalLog[]
 
   @@unique([oltDeviceId, ponPort, onuId])
   @@map("onu_devices")
+}
+
+model OnuSignalLog {
+  id             Int       @id @default(autoincrement())
+  onuDeviceId    Int       @map("onu_device_id")
+  rxPower        Decimal?  @map("rx_power") @db.Decimal(6, 2)
+  txPower        Decimal?  @map("tx_power") @db.Decimal(6, 2)
+  distanceMeters Int?      @map("distance_meters")
+  polledAt       DateTime  @default(now()) @map("polled_at")
+  onuDevice      OnuDevice @relation(fields: [onuDeviceId], references: [id])
+
+  @@index([onuDeviceId, polledAt])
+  @@map("onu_signal_logs")
+}
+
+model SwitchDevice {
+  id                 Int                @id @default(autoincrement())
+  name               String
+  vendor             SwitchVendor
+  model              String?
+  host               String             @unique
+  managementIp       String?            @map("management_ip")
+  snmpVersion        SnmpVersion        @default(v2c) @map("snmp_version")
+  snmpCommunity      String?            @map("snmp_community")
+  snmpPort           Int                @default(161) @map("snmp_port")
+  status             SwitchDeviceStatus @default(active)
+  location           String?
+  notes              String?            @db.Text
+  sysDescr           String?            @map("sys_descr") @db.Text
+  sysName            String?            @map("sys_name")
+  uptimeSeconds      Int?               @map("uptime_seconds")
+  cpuUsagePercent    Decimal?           @map("cpu_usage_percent") @db.Decimal(5, 2)
+  memoryUsagePercent Decimal?           @map("memory_usage_percent") @db.Decimal(5, 2)
+  portCount          Int                @default(0) @map("port_count")
+  portsUp            Int                @default(0) @map("ports_up")
+  lastPolledAt       DateTime?          @map("last_polled_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  deletedAt          DateTime?          @map("deleted_at")
+  monitoringTargets  NetworkMonitoringTarget[]
+
+  @@map("switch_devices")
 }
 
 model NetworkMonitoringTarget {
@@ -1038,6 +1098,7 @@ model NetworkMonitoringTarget {
   mikrotikRouterId   Int?                     @map("mikrotik_router_id")
   oltDeviceId        Int?                     @map("olt_device_id")
   onuDeviceId        Int?                     @map("onu_device_id")
+  switchDeviceId     Int?                     @map("switch_device_id")
   snmpCommunity      String?                  @map("snmp_community")
   status             NetworkMonitorStatus     @default(unknown)
   latencyMs          Decimal?                 @map("latency_ms") @db.Decimal(8, 2)
@@ -1056,6 +1117,7 @@ model NetworkMonitoringTarget {
   mikrotikRouter     MikrotikRouter?          @relation(fields: [mikrotikRouterId], references: [id])
   oltDevice          OltDevice?               @relation(fields: [oltDeviceId], references: [id])
   onuDevice          OnuDevice?               @relation(fields: [onuDeviceId], references: [id])
+  switchDevice       SwitchDevice?            @relation(fields: [switchDeviceId], references: [id])
   checks             NetworkMonitoringCheck[]
   alerts             NetworkAlert[]
 

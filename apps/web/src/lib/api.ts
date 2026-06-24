@@ -1,7 +1,8 @@
 import { clearAuthSession, getAccessToken, getStoredAuthUser } from "@/lib/auth-user";
+import { ApiRequestError, readApiErrorMessage } from "@/lib/api-errors";
 
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+  process.env.NEXT_PUBLIC_API_URL ?? "/backend";
 
 function getAuthHeaders() {
   const headers: Record<string, string> = {};
@@ -42,8 +43,8 @@ export async function apiRequest<T>(
   }
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed with ${response.status}`);
+    const message = await readApiErrorMessage(response);
+    throw new ApiRequestError(message, response.status);
   }
 
   return response.json() as Promise<T>;
@@ -60,18 +61,8 @@ export async function loginRequest(email: string, password: string) {
   });
 
   if (!response.ok) {
-    let message = "Invalid email or password";
-    try {
-      const body = await response.json();
-      message = body.message ?? message;
-      if (Array.isArray(message)) {
-        message = message.join(", ");
-      }
-    } catch {
-      const text = await response.text();
-      if (text) message = text;
-    }
-    throw new Error(message);
+    const message = await readApiErrorMessage(response);
+    throw new ApiRequestError(message, response.status);
   }
 
   return response.json() as Promise<{

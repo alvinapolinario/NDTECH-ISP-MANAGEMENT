@@ -1,15 +1,15 @@
-import { OltDeviceStatus, OltPonTechnology, SnmpVersion } from '@prisma/client';
+import { SnmpVersion, SwitchDeviceStatus, SwitchVendor } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
-export class UpdateOltDeviceDto {
+export class UpdateSwitchDeviceDto {
   @IsOptional()
   @IsString()
   name?: string;
 
   @IsOptional()
-  @IsString()
-  vendor?: string;
+  @IsEnum(SwitchVendor)
+  vendor?: SwitchVendor;
 
   @IsOptional()
   @IsString()
@@ -22,22 +22,6 @@ export class UpdateOltDeviceDto {
   @IsOptional()
   @IsString()
   managementIp?: string | null;
-
-  @IsOptional()
-  @IsEnum(OltPonTechnology)
-  ponTechnology?: OltPonTechnology;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  ponPortCount?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  uplinkPortCount?: number;
 
   @IsOptional()
   @IsEnum(SnmpVersion)
@@ -54,8 +38,8 @@ export class UpdateOltDeviceDto {
   snmpPort?: number;
 
   @IsOptional()
-  @IsEnum(OltDeviceStatus)
-  status?: OltDeviceStatus;
+  @IsEnum(SwitchDeviceStatus)
+  status?: SwitchDeviceStatus;
 
   @IsOptional()
   @IsString()

@@ -14,6 +14,10 @@ export type OltDevice = {
   uplinkPortCount: number;
   snmpVersion: SnmpVersion;
   snmpCommunity?: string | null;
+  snmpPort?: number;
+  sysDescr?: string | null;
+  sysName?: string | null;
+  uptimeSeconds?: number | null;
   status: OltDeviceStatus;
   location?: string | null;
   notes?: string | null;
@@ -46,6 +50,7 @@ export type OltDevicePayload = {
   uplinkPortCount?: number;
   snmpVersion?: SnmpVersion;
   snmpCommunity?: string | null;
+  snmpPort?: number;
   status?: OltDeviceStatus;
   location?: string | null;
   notes?: string | null;

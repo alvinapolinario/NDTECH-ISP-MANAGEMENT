@@ -5,48 +5,39 @@ import { StatusBadge } from "@/components/network/status-badge";
 import { Modal } from "@/components/ui/modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
-  createOltDevice,
-  deleteOltDevice,
-  pollOltDevice,
-  testOltSnmp,
-  updateOltDevice,
-  useOltDevices,
-} from "@/hooks/use-olt-devices";
+  createSwitchDevice,
+  deleteSwitchDevice,
+  pollSwitchDevice,
+  testSwitchSnmp,
+  updateSwitchDevice,
+  useSwitchDevices,
+} from "@/hooks/use-switch-devices";
 import { formatDate } from "@/lib/format";
 import type {
-  OltDevice,
-  OltDeviceStatus,
-  OltPonTechnology,
-  SnmpVersion,
-} from "@/types/olt-device";
+  SwitchDevice,
+  SwitchDeviceStatus,
+  SwitchVendor,
+} from "@/types/switch-device";
 
-type OltForm = {
+type SwitchForm = {
   name: string;
-  vendor: string;
+  vendor: SwitchVendor;
   model: string;
   host: string;
   managementIp: string;
-  ponTechnology: OltPonTechnology;
-  ponPortCount: string;
-  uplinkPortCount: string;
-  snmpVersion: SnmpVersion;
   snmpCommunity: string;
   snmpPort: string;
-  status: OltDeviceStatus;
+  status: SwitchDeviceStatus;
   location: string;
   notes: string;
 };
 
-const emptyForm: OltForm = {
+const emptyForm: SwitchForm = {
   name: "",
-  vendor: "",
+  vendor: "mikrotik",
   model: "",
   host: "",
   managementIp: "",
-  ponTechnology: "gpon",
-  ponPortCount: "0",
-  uplinkPortCount: "0",
-  snmpVersion: "v2c",
   snmpCommunity: "",
   snmpPort: "161",
   status: "active",
@@ -54,41 +45,37 @@ const emptyForm: OltForm = {
   notes: "",
 };
 
-const statusOptions: Array<{ label: string; value: OltDeviceStatus | "" }> = [
+const statusOptions: Array<{ label: string; value: SwitchDeviceStatus | "" }> = [
   { label: "All statuses", value: "" },
   { label: "Active", value: "active" },
   { label: "Inactive", value: "inactive" },
   { label: "Maintenance", value: "maintenance" },
 ];
 
-const ponOptions: Array<{ label: string; value: OltPonTechnology | "" }> = [
-  { label: "All PON types", value: "" },
-  { label: "GPON", value: "gpon" },
-  { label: "EPON", value: "epon" },
-  { label: "XG-PON", value: "xgpon" },
-  { label: "XGS-PON", value: "xgspon" },
-  { label: "XPON", value: "xpon" },
+const vendorOptions: Array<{ label: string; value: SwitchVendor | "" }> = [
+  { label: "All vendors", value: "" },
+  { label: "MikroTik", value: "mikrotik" },
+  { label: "UniFi", value: "unifi" },
+  { label: "EdgeSwitch", value: "edgeswitch" },
 ];
 
-const snmpOptions: Array<{ label: string; value: SnmpVersion }> = [
-  { label: "SNMP v2c", value: "v2c" },
-];
+const vendorFormOptions = vendorOptions.filter((option) => option.value) as Array<{
+  label: string;
+  value: SwitchVendor;
+}>;
 
-function ponLabel(value: OltPonTechnology) {
-  return ponOptions.find((option) => option.value === value)?.label ?? value.toUpperCase();
+function vendorLabel(value: SwitchVendor) {
+  return vendorFormOptions.find((option) => option.value === value)?.label ?? value;
 }
 
-function toPayload(form: OltForm) {
+function toPayload(form: SwitchForm) {
   return {
     name: form.name,
     vendor: form.vendor,
     model: form.model || null,
     host: form.host,
     managementIp: form.managementIp || null,
-    ponTechnology: form.ponTechnology,
-    ponPortCount: Number(form.ponPortCount || 0),
-    uplinkPortCount: Number(form.uplinkPortCount || 0),
-    snmpVersion: form.snmpVersion,
+    snmpVersion: "v2c" as const,
     snmpCommunity: form.snmpCommunity || null,
     snmpPort: Number(form.snmpPort || 161),
     status: form.status,
@@ -97,24 +84,24 @@ function toPayload(form: OltForm) {
   };
 }
 
-export default function OltDevicesPage() {
+export default function SwitchDevicesPage() {
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<OltDeviceStatus | "">("");
-  const [ponTechnology, setPonTechnology] = useState<OltPonTechnology | "">("");
+  const [status, setStatus] = useState<SwitchDeviceStatus | "">("");
+  const [vendor, setVendor] = useState<SwitchVendor | "">("");
   const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<OltDevice | null>(null);
-  const [form, setForm] = useState<OltForm>(emptyForm);
+  const [editing, setEditing] = useState<SwitchDevice | null>(null);
+  const [form, setForm] = useState<SwitchForm>(emptyForm);
   const [message, setMessage] = useState("");
   const [localError, setLocalError] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
 
   const query = useMemo(
-    () => ({ search, status, ponTechnology, page, limit: 10 }),
-    [page, ponTechnology, search, status],
+    () => ({ search, status, vendor, page, limit: 10 }),
+    [page, search, status, vendor],
   );
-  const { data, loading, error, reload } = useOltDevices(query);
+  const { data, loading, error, reload } = useSwitchDevices(query);
   const totalPages = Math.max(Math.ceil(data.meta.total / data.meta.limit), 1);
 
   function openCreate() {
@@ -124,7 +111,7 @@ export default function OltDevicesPage() {
     setFormOpen(true);
   }
 
-  function openEdit(device: OltDevice) {
+  function openEdit(device: SwitchDevice) {
     setEditing(device);
     setForm({
       name: device.name,
@@ -132,10 +119,6 @@ export default function OltDevicesPage() {
       model: device.model ?? "",
       host: device.host,
       managementIp: device.managementIp ?? "",
-      ponTechnology: device.ponTechnology,
-      ponPortCount: String(device.ponPortCount),
-      uplinkPortCount: String(device.uplinkPortCount),
-      snmpVersion: device.snmpVersion,
       snmpCommunity: device.snmpCommunity ?? "",
       snmpPort: String(device.snmpPort ?? 161),
       status: device.status,
@@ -151,30 +134,29 @@ export default function OltDevicesPage() {
     setSaving(true);
     setMessage("");
     setLocalError("");
-
     try {
       if (editing) {
-        await updateOltDevice(editing.id, toPayload(form));
-        setMessage("OLT device updated.");
+        await updateSwitchDevice(editing.id, toPayload(form));
+        setMessage("Switch updated.");
       } else {
-        await createOltDevice(toPayload(form));
-        setMessage("OLT device created.");
+        await createSwitchDevice(toPayload(form));
+        setMessage("Switch created.");
       }
       setFormOpen(false);
       await reload();
     } catch (caught) {
-      setLocalError(caught instanceof Error ? caught.message : "Unable to save OLT device");
+      setLocalError(caught instanceof Error ? caught.message : "Unable to save switch");
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleTestSnmp(device: OltDevice) {
+  async function handleTestSnmp(device: SwitchDevice) {
     setActionLoading(device.id);
     setMessage("");
     setLocalError("");
     try {
-      const result = await testOltSnmp(device.id);
+      const result = await testSwitchSnmp(device.id);
       if (result.success) {
         setMessage(
           `SNMP OK (${result.latencyMs}ms) — ${result.sysName ?? result.sysDescr ?? "device responded"}`,
@@ -190,39 +172,37 @@ export default function OltDevicesPage() {
     }
   }
 
-  async function handlePoll(device: OltDevice) {
+  async function handlePoll(device: SwitchDevice) {
     setActionLoading(device.id);
     setMessage("");
     setLocalError("");
     try {
-      const result = await pollOltDevice(device.id);
+      const result = await pollSwitchDevice(device.id);
       if (result.success) {
+        const iface = result.interfaces;
         setMessage(
-          `Poll complete (${result.latencyMs}ms). Updated ${result.onuUpdated} ONU(s); ${result.onuReadings.length} reading(s) from OLT.`,
+          `Poll complete (${result.latencyMs}ms). Ports ${iface?.up ?? 0}/${iface?.total ?? 0} up.`,
         );
       } else {
-        setLocalError(result.error ?? "OLT poll failed");
+        setLocalError(result.error ?? "Switch poll failed");
       }
       await reload();
     } catch (caught) {
-      setLocalError(caught instanceof Error ? caught.message : "OLT poll failed");
+      setLocalError(caught instanceof Error ? caught.message : "Switch poll failed");
     } finally {
       setActionLoading(null);
     }
   }
 
-  async function handleDelete(device: OltDevice) {
-    if (!window.confirm(`Delete OLT device ${device.name}?`)) return;
+  async function handleDelete(device: SwitchDevice) {
+    if (!window.confirm(`Delete switch ${device.name}?`)) return;
     setSaving(true);
-    setMessage("");
-    setLocalError("");
-
     try {
-      await deleteOltDevice(device.id);
-      setMessage("OLT device deleted.");
+      await deleteSwitchDevice(device.id);
+      setMessage("Switch deleted.");
       await reload();
     } catch (caught) {
-      setLocalError(caught instanceof Error ? caught.message : "Unable to delete OLT device");
+      setLocalError(caught instanceof Error ? caught.message : "Unable to delete switch");
     } finally {
       setSaving(false);
     }
@@ -235,9 +215,9 @@ export default function OltDevicesPage() {
           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
             Network Operations
           </p>
-          <h1 className="text-2xl font-semibold text-slate-950">OLT Devices</h1>
+          <h1 className="text-2xl font-semibold text-slate-950">Switches</h1>
           <p className="max-w-3xl text-sm leading-6 text-slate-600">
-            Register VSOL and CDATA OLTs with SNMP v2c. Test connectivity and poll ONU optical levels from live devices.
+            Manage MikroTik, UniFi, and EdgeSwitch devices with SNMP v2c polling on real hardware.
           </p>
         </div>
         <button
@@ -245,7 +225,7 @@ export default function OltDevicesPage() {
           onClick={openCreate}
           className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
         >
-          Add OLT Device
+          Add Switch
         </button>
       </header>
 
@@ -255,13 +235,13 @@ export default function OltDevicesPage() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && (setPage(1), reload())}
-            placeholder="Search name, vendor, host, IP, or location"
+            placeholder="Search name, host, IP, or location"
             className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500"
           />
           <SearchableSelect
             value={status}
             onChange={(nextValue) => {
-              setStatus(nextValue as OltDeviceStatus | "");
+              setStatus(nextValue as SwitchDeviceStatus | "");
               setPage(1);
             }}
             includeEmptyOption={false}
@@ -269,13 +249,13 @@ export default function OltDevicesPage() {
             className="rounded-md border border-slate-200 px-3 py-2 text-sm"
           />
           <SearchableSelect
-            value={ponTechnology}
+            value={vendor}
             onChange={(nextValue) => {
-              setPonTechnology(nextValue as OltPonTechnology | "");
+              setVendor(nextValue as SwitchVendor | "");
               setPage(1);
             }}
             includeEmptyOption={false}
-            options={ponOptions}
+            options={vendorOptions}
             className="rounded-md border border-slate-200 px-3 py-2 text-sm"
           />
           <button
@@ -295,24 +275,22 @@ export default function OltDevicesPage() {
             {message}
           </div>
         ) : null}
-        {(localError || error) ? (
+        {localError || error ? (
           <div className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
             {localError || error}
           </div>
         ) : null}
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
             <thead className="bg-emerald-950 text-white">
               <tr>
                 <th className="px-4 py-3">Device</th>
-                <th className="px-4 py-3">Vendor / Model</th>
+                <th className="px-4 py-3">Vendor</th>
                 <th className="px-4 py-3">Management</th>
-                <th className="px-4 py-3">PON</th>
                 <th className="px-4 py-3">Ports</th>
-                <th className="px-4 py-3">SNMP</th>
+                <th className="px-4 py-3">Health</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Location</th>
                 <th className="px-4 py-3">Last Polled</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
@@ -322,30 +300,24 @@ export default function OltDevicesPage() {
                 <tr key={device.id} className="border-b border-slate-100">
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-950">{device.name}</div>
-                    <div className="text-xs text-slate-500">{device.notes ?? "No notes"}</div>
+                    <div className="text-xs text-slate-500">{device.model ?? "No model"}</div>
                   </td>
-                  <td className="px-4 py-3">
-                    <div>{device.vendor}</div>
-                    <div className="text-xs text-slate-500">{device.model ?? "-"}</div>
-                  </td>
+                  <td className="px-4 py-3">{vendorLabel(device.vendor)}</td>
                   <td className="px-4 py-3">
                     <div>{device.host}</div>
                     <div className="text-xs text-slate-500">{device.managementIp ?? "-"}</div>
                   </td>
-                  <td className="px-4 py-3">{ponLabel(device.ponTechnology)}</td>
                   <td className="px-4 py-3">
-                    {device.ponPortCount} PON / {device.uplinkPortCount} uplink
+                    {device.portsUp}/{device.portCount} up
                   </td>
                   <td className="px-4 py-3">
-                    <div className="uppercase">{device.snmpVersion}</div>
-                    <div className="text-xs text-slate-500">
-                      {device.snmpCommunity ? "Community set" : "No community"}
+                    <div className="text-xs text-slate-600">
+                      CPU {device.cpuUsagePercent ?? "-"}% / MEM {device.memoryUsagePercent ?? "-"}%
                     </div>
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={device.status} />
                   </td>
-                  <td className="px-4 py-3">{device.location ?? "-"}</td>
                   <td className="px-4 py-3">{formatDate(device.lastPolledAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
@@ -386,8 +358,8 @@ export default function OltDevicesPage() {
               ))}
               {!data.items.length ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
-                    {loading ? "Loading..." : "No OLT devices found."}
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                    {loading ? "Loading..." : "No switches found."}
                   </td>
                 </tr>
               ) : null}
@@ -422,8 +394,8 @@ export default function OltDevicesPage() {
 
       <Modal
         open={formOpen}
-        title={editing ? "Edit OLT Device" : "Add OLT Device"}
-        description="Store the OLT identity, management endpoint, PON capacity, and SNMP details."
+        title={editing ? "Edit Switch" : "Add Switch"}
+        description="SNMP v2c only. Enable SNMP on the device and allow access from this server."
         onClose={() => setFormOpen(false)}
         footer={
           <div className="flex justify-end gap-2">
@@ -436,16 +408,16 @@ export default function OltDevicesPage() {
             </button>
             <button
               type="submit"
-              form="olt-device-form"
+              form="switch-device-form"
               disabled={saving}
               className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
             >
-              {saving ? "Saving..." : "Save OLT Device"}
+              {saving ? "Saving..." : "Save Switch"}
             </button>
           </div>
         }
       >
-        <form id="olt-device-form" onSubmit={submit} className="grid gap-4 md:grid-cols-2">
+        <form id="switch-device-form" onSubmit={submit} className="grid gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Name
             <input
@@ -457,11 +429,13 @@ export default function OltDevicesPage() {
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Vendor
-            <input
-              required
+            <SearchableSelect
               value={form.vendor}
-              placeholder="VSOL or CDATA"
-              onChange={(event) => setForm((current) => ({ ...current, vendor: event.target.value }))}
+              onChange={(nextValue) =>
+                setForm((current) => ({ ...current, vendor: nextValue as SwitchVendor }))
+              }
+              includeEmptyOption={false}
+              options={vendorFormOptions}
               className="rounded-md border border-slate-200 px-3 py-2 text-sm"
             />
           </label>
@@ -474,12 +448,11 @@ export default function OltDevicesPage() {
             />
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-            Host
+            Host / IP
             <input
               required
               value={form.host}
               onChange={(event) => setForm((current) => ({ ...current, host: event.target.value }))}
-              placeholder="192.168.1.10 or olt-core.local"
               className="rounded-md border border-slate-200 px-3 py-2 text-sm"
             />
           </label>
@@ -494,62 +467,9 @@ export default function OltDevicesPage() {
             />
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-            PON Technology
-            <SearchableSelect
-              value={form.ponTechnology}
-              onChange={(nextValue) =>
-                setForm((current) => ({
-                  ...current,
-                  ponTechnology: nextValue as OltPonTechnology,
-                }))
-              }
-              includeEmptyOption={false}
-              options={ponOptions.filter((option) => option.value)}
-              className="rounded-md border border-slate-200 px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-            PON Ports
-            <input
-              type="number"
-              min="0"
-              value={form.ponPortCount}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, ponPortCount: event.target.value }))
-              }
-              className="rounded-md border border-slate-200 px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-            Uplink Ports
-            <input
-              type="number"
-              min="0"
-              value={form.uplinkPortCount}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, uplinkPortCount: event.target.value }))
-              }
-              className="rounded-md border border-slate-200 px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-            SNMP Version
-            <SearchableSelect
-              value={form.snmpVersion}
-              onChange={(nextValue) =>
-                setForm((current) => ({
-                  ...current,
-                  snmpVersion: nextValue as SnmpVersion,
-                }))
-              }
-              includeEmptyOption={false}
-              options={snmpOptions}
-              className="rounded-md border border-slate-200 px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             SNMP Community
             <input
+              required
               value={form.snmpCommunity}
               onChange={(event) =>
                 setForm((current) => ({ ...current, snmpCommunity: event.target.value }))
@@ -574,14 +494,14 @@ export default function OltDevicesPage() {
             <SearchableSelect
               value={form.status}
               onChange={(nextValue) =>
-                setForm((current) => ({ ...current, status: nextValue as OltDeviceStatus }))
+                setForm((current) => ({ ...current, status: nextValue as SwitchDeviceStatus }))
               }
               includeEmptyOption={false}
               options={statusOptions.filter((option) => option.value)}
               className="rounded-md border border-slate-200 px-3 py-2 text-sm"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700 md:col-span-2">
             Location
             <input
               value={form.location}

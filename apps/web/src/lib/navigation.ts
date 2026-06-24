@@ -211,6 +211,7 @@ export const navigationGroups: NavGroup[] = [
       { label: "PPPoE Accounts", href: "/network/pppoe-accounts", icon: Network },
       { label: "OLT Devices", href: "/network/olt-devices", icon: Server },
       { label: "ONU Devices", href: "/network/onu-devices", icon: Server },
+      { label: "Switches", href: "/network/switches", icon: Router },
       { label: "PPPoE Sessions", href: "/network/pppoe-sessions", icon: Activity },
       { label: "Network Monitoring", href: "/network/monitoring", icon: Radar },
       { label: "Network Alerts", href: "/network/alerts", icon: BellRing },

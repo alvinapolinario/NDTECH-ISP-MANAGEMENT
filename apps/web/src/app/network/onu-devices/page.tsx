@@ -9,6 +9,7 @@ import { fetchOltDevices } from "@/hooks/use-olt-devices";
 import {
   createOnuDevice,
   deleteOnuDevice,
+  pollOnuDevice,
   updateOnuDevice,
   useOnuDevices,
 } from "@/hooks/use-onu-devices";
@@ -124,6 +125,7 @@ export default function OnuDevicesPage() {
   const [message, setMessage] = useState("");
   const [localError, setLocalError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
 
   const query = useMemo(
     () => ({
@@ -218,6 +220,27 @@ export default function OnuDevicesPage() {
       setLocalError(caught instanceof Error ? caught.message : "Unable to save ONU device");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePoll(device: OnuDevice) {
+    setActionLoading(device.id);
+    setMessage("");
+    setLocalError("");
+    try {
+      const result = await pollOnuDevice(device.id);
+      if (result.oltPoll.success) {
+        setMessage(
+          `SNMP poll via OLT complete. Rx ${formatSignal(result.onu.rxPower)} / Tx ${formatSignal(result.onu.txPower)}.`,
+        );
+      } else {
+        setLocalError(result.oltPoll.error ?? "ONU poll failed");
+      }
+      await reload();
+    } catch (caught) {
+      setLocalError(caught instanceof Error ? caught.message : "ONU poll failed");
+    } finally {
+      setActionLoading(null);
     }
   }
 
@@ -396,6 +419,14 @@ export default function OnuDevicesPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handlePoll(device)}
+                        disabled={actionLoading === device.id}
+                        className="rounded-md border border-sky-200 px-2.5 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                      >
+                        Poll SNMP
+                      </button>
                       <button
                         type="button"
                         onClick={() => openEdit(device)}

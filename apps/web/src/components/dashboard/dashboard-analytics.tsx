@@ -80,8 +80,15 @@ export function DashboardAnalytics() {
       </section>
 
       {error ? (
-        <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+        <div
+          className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          role="alert"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Unable to load dashboard data</p>
+            <p className="mt-1 text-amber-800">{error}</p>
+          </div>
         </div>
       ) : null}
 
