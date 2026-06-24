@@ -1,16 +1,33 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { NotificationChannel } from '@prisma/client';
 import { ListQueryDto } from '../common/dto/list-query.dto';
 import { getPagination } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
+import { SmsService } from '../sms/sms.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { UpdateNotificationDto } from './dto/update-notification.dto';
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly smsService: SmsService,
+  ) {}
 
-  create(dto: CreateNotificationDto) {
-    return this.prisma.notification.create({ data: dto });
+  async create(dto: CreateNotificationDto) {
+    const notification = await this.prisma.notification.create({ data: dto });
+
+    if (dto.channel === NotificationChannel.sms) {
+      await this.smsService.dispatchNotificationSms({
+        title: dto.title,
+        message: dto.message,
+        notificationType: dto.notificationType,
+        userId: dto.userId,
+        customerId: dto.customerId,
+      });
+    }
+
+    return notification;
   }
 
   async findAll(query: ListQueryDto) {

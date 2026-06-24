@@ -4,8 +4,11 @@ import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
 import { createDatabasePoolConfig } from '../src/prisma/database-pool.config';
 
+const rootEnvFile =
+  process.env.DOCKER_ENV === 'true' ? '../../.env.docker' : '../../.env';
+
 config({ path: '.env' });
-config({ path: '../../.env', override: true });
+config({ path: rootEnvFile, override: true });
 
 const adapter = new PrismaMariaDb(createDatabasePoolConfig());
 const prisma = new PrismaClient({ adapter });

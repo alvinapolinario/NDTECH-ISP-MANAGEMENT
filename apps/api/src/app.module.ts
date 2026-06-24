@@ -50,11 +50,16 @@ import { ReportsModule } from './reports/reports.module';
 import { ExpenseCategoriesModule } from './expense-categories/expense-categories.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { CollectorSyncModule } from './collector-sync/collector-sync.module';
+import { IntegrationSettingsModule } from './integration-settings/integration-settings.module';
+import { SmsModule } from './sms/sms.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      envFilePath: ['.env', '../../.env'],
+      envFilePath:
+        process.env.DOCKER_ENV === 'true'
+          ? ['../../.env.docker']
+          : ['.env', '../../.env'],
       isGlobal: true,
     }),
     PrismaModule,
@@ -103,6 +108,8 @@ import { CollectorSyncModule } from './collector-sync/collector-sync.module';
     ExpenseCategoriesModule,
     ExpensesModule,
     CollectorSyncModule,
+    IntegrationSettingsModule,
+    SmsModule,
   ],
   controllers: [AppController],
   providers: [

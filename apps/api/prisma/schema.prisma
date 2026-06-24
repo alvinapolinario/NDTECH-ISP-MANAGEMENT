@@ -19,6 +19,13 @@ enum NotificationChannel {
   socket
 }
 
+enum SmsMessageStatus {
+  queued
+  sent
+  failed
+  skipped
+}
+
 enum CustomerType {
   residential
   business
@@ -383,6 +390,8 @@ model User {
   pppoeAccountActions PppoeAccountActionLog[] @relation("PppoeActionPerformer")
   collectorMobileEvents CollectorMobileEvent[] @relation("CollectorMobileEvents")
   apiAccessTokens     ApiAccessToken[]
+  sentSmsMessages     SmsMessage[]
+  integrationSettings IntegrationSetting[] @relation("IntegrationSettingUpdatedBy")
 
   @@map("users")
 }
@@ -482,6 +491,42 @@ model Notification {
   @@map("notifications")
 }
 
+model SmsMessage {
+  id                 Int              @id @default(autoincrement())
+  recipient          String
+  message            String           @db.Text
+  senderName         String?          @map("sender_name")
+  status             SmsMessageStatus @default(queued)
+  semaphoreMessageId String?          @map("semaphore_message_id")
+  semaphoreStatus    String?          @map("semaphore_status")
+  network            String?
+  errorMessage       String?          @map("error_message") @db.Text
+  customerId         Int?             @map("customer_id")
+  sentByUserId       Int?             @map("sent_by_user_id")
+  notificationType   String?          @map("notification_type")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+  customer           Customer?        @relation(fields: [customerId], references: [id])
+  sentBy             User?            @relation(fields: [sentByUserId], references: [id])
+
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("sms_messages")
+}
+
+model IntegrationSetting {
+  id              Int      @id @default(autoincrement())
+  key             String   @unique
+  valueEncrypted  String?  @map("value_encrypted") @db.Text
+  valuePlain      String?  @map("value_plain") @db.Text
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  updatedByUserId Int?     @map("updated_by_user_id")
+  updatedBy       User?    @relation("IntegrationSettingUpdatedBy", fields: [updatedByUserId], references: [id])
+
+  @@map("integration_settings")
+}
+
 model Customer {
   id                   Int                @id @default(autoincrement())
   accountNumber        String             @unique @map("account_number")
@@ -514,6 +559,7 @@ model Customer {
   tickets              Ticket[]
   projects             Project[]
   pppoeAccountActions  PppoeAccountActionLog[]
+  smsMessages          SmsMessage[]
 
   @@map("customers")
 }

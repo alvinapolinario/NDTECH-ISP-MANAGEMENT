@@ -196,7 +196,13 @@ REDIS_PORT="6379"
 API_PORT="4000"
 NEXT_PUBLIC_API_URL="http://localhost:4000"
 NEXT_PUBLIC_SOCKET_URL="http://localhost:4000"
+# Optional fallbacks if not saved in Admin → Integration Settings
+SEMAPHORE_API_KEY=""
+SEMAPHORE_SENDER_NAME="NDTECH"
+SMS_ENABLED="true"
 ```
+
+For Docker-based development (API + Web + MySQL + Redis) using a **separate** `.env.docker` file, see [DOCKER.md](./DOCKER.md).
 
 ---
 

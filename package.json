@@ -11,10 +11,18 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:web\" \"npm run dev:api\"",
     "dev:web": "npm --prefix apps/web run dev",
+    "dev:web:docker": "npm --prefix apps/web run dev:docker",
     "dev:api": "npm --prefix apps/api run start:dev",
     "dev:mobile": "cd apps/mobile && flutter run",
     "db:migrate": "npm --prefix apps/api run db:migrate",
     "db:seed": "npm --prefix apps/api run db:seed",
+    "docker:build": "docker compose --env-file .env.docker build",
+    "docker:up": "docker compose --env-file .env.docker up -d",
+    "docker:down": "docker compose --env-file .env.docker down",
+    "docker:restart": "docker compose --env-file .env.docker restart",
+    "docker:logs": "docker compose --env-file .env.docker logs -f",
+    "docker:ps": "docker compose --env-file .env.docker ps",
+    "docker:seed": "docker compose --env-file .env.docker exec api sh -c \"cd apps/api && npx prisma db seed\"",
     "test": "echo \"No root tests configured yet\""
   },
   "keywords": [],

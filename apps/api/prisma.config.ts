@@ -1,7 +1,10 @@
 import { config } from "dotenv";
 import { defineConfig } from "prisma/config";
 
-config({ path: "../../.env" });
+const rootEnvFile =
+  process.env.DOCKER_ENV === "true" ? "../../.env.docker" : "../../.env";
+
+config({ path: rootEnvFile });
 config();
 
 export default defineConfig({
