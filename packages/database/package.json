@@ -1,0 +1,11 @@
+{
+  "name": "@isp/database",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Database package placeholder for Prisma schema, migrations, and seeders.",
+  "main": "src/index.ts",
+  "scripts": {
+    "migrate": "npm --prefix ../../apps/api exec prisma migrate dev",
+    "seed": "npm --prefix ../../apps/api exec prisma db seed"
+  }
+}

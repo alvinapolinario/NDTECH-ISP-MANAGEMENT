@@ -1,0 +1,1599 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum UserStatus {
+  active
+  inactive
+  suspended
+}
+
+enum NotificationChannel {
+  system
+  sms
+  email
+  socket
+}
+
+enum CustomerType {
+  residential
+  business
+  government
+}
+
+enum CustomerStatus {
+  lead
+  prospect
+  active
+  suspended
+  disconnected
+  terminated
+}
+
+enum CustomerAddressType {
+  billing
+  installation
+}
+
+enum SubscriptionStatus {
+  active
+  suspended
+  cancelled
+  terminated
+}
+
+enum MikrotikRouterStatus {
+  active
+  inactive
+}
+
+enum OltDeviceStatus {
+  active
+  inactive
+  maintenance
+}
+
+enum OnuDeviceStatus {
+  online
+  offline
+  los
+  disabled
+  pending
+}
+
+enum NetworkMonitorDeviceType {
+  mikrotik_router
+  olt_device
+  onu_device
+  other
+}
+
+enum NetworkMonitorMethod {
+  icmp
+  snmp
+  manual
+}
+
+enum NetworkMonitorStatus {
+  online
+  degraded
+  offline
+  unknown
+}
+
+enum NetworkAlertSeverity {
+  info
+  warning
+  critical
+}
+
+enum NetworkAlertStatus {
+  open
+  acknowledged
+  resolved
+  dismissed
+}
+
+enum NetworkAlertSource {
+  monitoring
+  manual
+  system
+}
+
+enum InventoryItemType {
+  material
+  equipment
+  consumable
+  tool
+}
+
+enum InventoryMovementType {
+  stock_in
+  stock_out
+  transfer
+  return
+}
+
+enum InventoryAdjustmentType {
+  increase
+  decrease
+  set
+}
+
+enum PurchaseRequestStatus {
+  draft
+  submitted
+  approved
+  rejected
+  cancelled
+}
+
+enum PurchaseRequestPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+enum PurchaseOrderStatus {
+  draft
+  issued
+  partially_received
+  received
+  cancelled
+}
+
+enum GoodsReceiptStatus {
+  received
+  cancelled
+}
+
+enum OltPonTechnology {
+  gpon
+  epon
+  xgpon
+  xgspon
+  xpon
+}
+
+enum SnmpVersion {
+  v1
+  v2c
+  v3
+}
+
+enum PppoeAccountStatus {
+  active
+  suspended
+  disabled
+}
+
+enum PppoeAccountActionType {
+  enable
+  disable
+  suspend
+  restore
+  profile_change
+}
+
+enum PppoeSessionStatus {
+  online
+  offline
+}
+
+enum InstallationRequestStatus {
+  pending
+  scheduled
+  in_progress
+  completed
+  cancelled
+}
+
+enum InstallationRequestPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+enum BillingCycleStatus {
+  draft
+  open
+  closed
+  cancelled
+}
+
+enum InvoiceStatus {
+  draft
+  issued
+  partially_paid
+  paid
+  overdue
+  cancelled
+}
+
+enum InvoiceItemType {
+  recurring_service
+  installation_fee
+  adjustment
+  repair
+  connector
+  previous_balance
+  other
+}
+
+enum PaymentMethod {
+  cash
+  gcash
+  bank_transfer
+  check
+  card
+  other
+}
+
+enum PaymentStatus {
+  posted
+  voided
+}
+
+enum ExpenseStatus {
+  recorded
+  voided
+}
+
+enum BillingAdjustmentType {
+  credit
+  charge
+}
+
+enum BillingAdjustmentStatus {
+  posted
+  voided
+}
+
+enum CollectionCaseStatus {
+  pending
+  contacted
+  promised_to_pay
+  escalated
+  resolved
+  cancelled
+}
+
+enum CollectionPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+enum CollectorMobileEventType {
+  payment
+  collection_update
+  visit_note
+}
+
+enum CollectorMobileEventStatus {
+  accepted
+  rejected
+  duplicate
+  adjusted
+}
+
+enum TicketStatus {
+  open
+  assigned
+  in_progress
+  resolved
+  closed
+  cancelled
+}
+
+enum TicketPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+enum TechnicianAssignmentStatus {
+  assigned
+  accepted
+  in_progress
+  completed
+  cancelled
+}
+
+enum ProjectStatus {
+  planning
+  active
+  on_hold
+  completed
+  cancelled
+}
+
+enum ProjectType {
+  expansion
+  backbone
+  customer_install
+  maintenance
+  other
+  cctv
+  solar
+  outsourced
+}
+
+enum ProjectEstimateStatus {
+  draft
+  approved
+  rejected
+  expired
+}
+
+enum ProjectBomStatus {
+  draft
+  approved
+  issued
+  cancelled
+}
+
+enum ProjectCostingStatus {
+  draft
+  final
+}
+
+enum MikrotikCommandStatus {
+  mock_logged
+  executed
+  failed
+  skipped
+}
+
+model User {
+  id                Int                @id @default(autoincrement())
+  name              String
+  email             String             @unique
+  mobileNumber      String?            @map("mobile_number")
+  passwordHash      String             @map("password_hash")
+  status            UserStatus         @default(active)
+  lastLoginAt       DateTime?          @map("last_login_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  deletedAt         DateTime?          @map("deleted_at")
+  roles             UserRole[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  createdCustomers  Customer[]         @relation("CustomerCreatedBy")
+  uploadedDocuments CustomerDocument[]
+  ticketAssignments TechnicianAssignment[]
+  collectorPayments Payment[]          @relation("PaymentCollector")
+  collectorCases    CollectionCase[]   @relation("CollectionCollector")
+  installerRequests InstallationRequest[] @relation("InstallationInstaller")
+  financeInvoices   Invoice[]          @relation("InvoiceFinanceReviewer")
+  financeAdjustments BillingAdjustment[] @relation("AdjustmentFinanceReviewer")
+  financePurchaseRequests PurchaseRequest[] @relation("PurchaseRequestFinanceReviewer")
+  financeCollectionCases CollectionCase[] @relation("CollectionFinanceReviewer")
+  contractorProjects Project[]          @relation("ProjectContractor")
+  recordedExpenses   Expense[]           @relation("ExpenseRecordedBy")
+  financeExpenses    Expense[]           @relation("ExpenseFinanceReviewer")
+  pppoeAccountActions PppoeAccountActionLog[] @relation("PppoeActionPerformer")
+  collectorMobileEvents CollectorMobileEvent[] @relation("CollectorMobileEvents")
+  apiAccessTokens     ApiAccessToken[]
+
+  @@map("users")
+}
+
+model ApiAccessToken {
+  id         Int       @id @default(autoincrement())
+  userId     Int       @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  label      String?
+  deviceId   String?   @map("device_id")
+  expiresAt  DateTime  @map("expires_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  user       User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, revokedAt])
+  @@map("api_access_tokens")
+}
+
+model Role {
+  id          Int              @id @default(autoincrement())
+  name        String           @unique
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          Int              @id @default(autoincrement())
+  module      String
+  action      String
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  roles       RolePermission[]
+
+  @@unique([module, action])
+  @@map("permissions")
+}
+
+model UserRole {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  roleId    Int      @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id])
+  role      Role     @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           Int        @id @default(autoincrement())
+  roleId       Int        @map("role_id")
+  permissionId Int        @map("permission_id")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int?     @map("user_id")
+  action      String
+  module      String
+  referenceId String?  @map("reference_id")
+  oldValue    Json?    @map("old_value")
+  newValue    Json?    @map("new_value")
+  ipAddress   String?  @map("ip_address")
+  createdAt   DateTime @default(now()) @map("created_at")
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model Notification {
+  id               Int                 @id @default(autoincrement())
+  userId           Int?                @map("user_id")
+  customerId       Int?                @map("customer_id")
+  title            String
+  message          String
+  notificationType String              @map("notification_type")
+  channel          NotificationChannel @default(system)
+  isRead           Boolean             @default(false) @map("is_read")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  user             User?               @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model Customer {
+  id                   Int                @id @default(autoincrement())
+  accountNumber        String             @unique @map("account_number")
+  customerType         CustomerType       @map("customer_type")
+  firstName            String?            @map("first_name")
+  lastName             String?            @map("last_name")
+  businessName         String?            @map("business_name")
+  email                String?
+  mobileNumber         String             @map("mobile_number")
+  birthDate            DateTime?          @map("birth_date") @db.Date
+  status               CustomerStatus     @default(lead)
+  referredByCustomerId Int?               @map("referred_by_customer_id")
+  createdByUserId      Int                @map("created_by_user_id")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  deletedAt            DateTime?          @map("deleted_at")
+  createdBy            User               @relation("CustomerCreatedBy", fields: [createdByUserId], references: [id])
+  referredByCustomer   Customer?          @relation("CustomerReferrals", fields: [referredByCustomerId], references: [id])
+  referredCustomers    Customer[]         @relation("CustomerReferrals")
+  addresses            CustomerAddress[]
+  documents            CustomerDocument[]
+  subscriptions        Subscription[]
+  pppoeAccounts        PppoeAccount[]
+  onuDevices           OnuDevice[]
+  installationRequests InstallationRequest[]
+  invoices             Invoice[]
+  payments             Payment[]
+  billingAdjustments   BillingAdjustment[]
+  collectionCases      CollectionCase[]
+  tickets              Ticket[]
+  projects             Project[]
+  pppoeAccountActions  PppoeAccountActionLog[]
+
+  @@map("customers")
+}
+
+model CustomerAddress {
+  id           Int                 @id @default(autoincrement())
+  customerId   Int                 @map("customer_id")
+  barangayId   Int?                @map("barangay_id")
+  addressType  CustomerAddressType @map("address_type")
+  street       String
+  barangay     String
+  municipality String
+  province     String
+  latitude     Decimal?            @db.Decimal(10, 7)
+  longitude    Decimal?            @db.Decimal(10, 7)
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+  customer     Customer            @relation(fields: [customerId], references: [id])
+  barangayRef  Barangay?           @relation(fields: [barangayId], references: [id])
+
+  @@map("customer_addresses")
+}
+
+model CustomerDocument {
+  id               Int      @id @default(autoincrement())
+  customerId       Int      @map("customer_id")
+  documentType     String   @map("document_type")
+  filePath         String   @map("file_path")
+  uploadedByUserId Int      @map("uploaded_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  customer         Customer @relation(fields: [customerId], references: [id])
+  uploadedBy       User     @relation(fields: [uploadedByUserId], references: [id])
+
+  @@map("customer_documents")
+}
+
+model Province {
+  id             Int            @id @default(autoincrement())
+  name           String         @unique
+  code           String?        @unique
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  municipalities Municipality[]
+
+  @@map("provinces")
+}
+
+model Municipality {
+  id         Int        @id @default(autoincrement())
+  provinceId Int        @map("province_id")
+  name       String
+  code       String?    @unique
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+  province   Province   @relation(fields: [provinceId], references: [id])
+  barangays  Barangay[]
+
+  @@unique([provinceId, name])
+  @@map("municipalities")
+}
+
+model Barangay {
+  id             Int               @id @default(autoincrement())
+  municipalityId Int               @map("municipality_id")
+  name           String
+  code           String?           @unique
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  municipality   Municipality      @relation(fields: [municipalityId], references: [id])
+  addresses      CustomerAddress[]
+
+  @@unique([municipalityId, name])
+  @@map("barangays")
+}
+
+model ServicePlan {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique
+  name         String
+  description  String?
+  downloadMbps Int      @map("download_mbps")
+  uploadMbps   Int      @map("upload_mbps")
+  monthlyPrice      Decimal   @map("monthly_price") @db.Decimal(10, 2)
+  pppoeProfileName  String?   @map("pppoe_profile_name")
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
+  subscriptions Subscription[]
+  pppoeAccounts   PppoeAccount[]
+  installationRequests InstallationRequest[]
+  invoiceItems         InvoiceItem[]
+
+  @@map("service_plans")
+}
+
+model InstallationRequest {
+  id                    Int                         @id @default(autoincrement())
+  customerId            Int                         @map("customer_id")
+  servicePlanId         Int?                        @map("service_plan_id")
+  status                InstallationRequestStatus   @default(pending)
+  priority              InstallationRequestPriority @default(normal)
+  requestedDate         DateTime                    @default(now()) @map("requested_date") @db.Date
+  scheduledDate         DateTime?                   @map("scheduled_date")
+  completedAt           DateTime?                   @map("completed_at")
+  assignedInstallerName   String?                     @map("assigned_installer_name")
+  assignedInstallerUserId Int?                        @map("assigned_installer_user_id")
+  contactNumber           String?                     @map("contact_number")
+  installationAddress     String                      @map("installation_address") @db.Text
+  mapLocation             String?                     @map("map_location")
+  notes                   String?                     @db.Text
+  createdAt               DateTime                    @default(now()) @map("created_at")
+  updatedAt               DateTime                    @updatedAt @map("updated_at")
+  deletedAt               DateTime?                   @map("deleted_at")
+  customer                Customer                    @relation(fields: [customerId], references: [id])
+  servicePlan               ServicePlan?                @relation(fields: [servicePlanId], references: [id])
+  assignedInstaller         User?                       @relation("InstallationInstaller", fields: [assignedInstallerUserId], references: [id])
+
+  @@map("installation_requests")
+}
+
+model BillingCycle {
+  id          Int                @id @default(autoincrement())
+  name        String
+  periodStart DateTime           @map("period_start") @db.Date
+  periodEnd   DateTime           @map("period_end") @db.Date
+  dueDate     DateTime           @map("due_date") @db.Date
+  status      BillingCycleStatus @default(draft)
+  notes       String?            @db.Text
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+  deletedAt   DateTime?          @map("deleted_at")
+  invoices    Invoice[]
+
+  @@unique([periodStart, periodEnd])
+  @@map("billing_cycles")
+}
+
+model Subscription {
+  id                 Int                @id @default(autoincrement())
+  customerId         Int                @map("customer_id")
+  servicePlanId      Int                @map("service_plan_id")
+  pppoeAccountId     Int?               @map("pppoe_account_id")
+  billingDay         Int                @map("billing_day")
+  startDate          DateTime           @map("start_date") @db.Date
+  endDate            DateTime?          @map("end_date") @db.Date
+  status             SubscriptionStatus @default(active)
+  autoSuspendEnabled Boolean            @default(true) @map("auto_suspend_enabled")
+  gracePeriodDays    Int                @default(7) @map("grace_period_days")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  customer           Customer           @relation(fields: [customerId], references: [id])
+  servicePlan        ServicePlan        @relation(fields: [servicePlanId], references: [id])
+  pppoeAccount       PppoeAccount?      @relation(fields: [pppoeAccountId], references: [id])
+  invoices           Invoice[]
+  onuDevices         OnuDevice[]
+  tickets            Ticket[]
+
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id             Int           @id @default(autoincrement())
+  invoiceNumber  String        @unique @map("invoice_number")
+  billingCycleId Int           @map("billing_cycle_id")
+  customerId     Int           @map("customer_id")
+  subscriptionId Int?          @map("subscription_id")
+  issueDate      DateTime      @map("issue_date") @db.Date
+  dueDate        DateTime      @map("due_date") @db.Date
+  subtotal       Decimal       @default(0) @db.Decimal(10, 2)
+  total          Decimal       @default(0) @db.Decimal(10, 2)
+  amountPaid     Decimal       @default(0) @map("amount_paid") @db.Decimal(10, 2)
+  balance        Decimal       @default(0) @db.Decimal(10, 2)
+  status                InvoiceStatus @default(draft)
+  notes                 String?       @db.Text
+  assignedFinanceUserId Int?          @map("assigned_finance_user_id")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+  deletedAt             DateTime?     @map("deleted_at")
+  billingCycle          BillingCycle  @relation(fields: [billingCycleId], references: [id])
+  customer              Customer      @relation(fields: [customerId], references: [id])
+  subscription          Subscription? @relation(fields: [subscriptionId], references: [id])
+  assignedFinanceUser   User?         @relation("InvoiceFinanceReviewer", fields: [assignedFinanceUserId], references: [id])
+  items          InvoiceItem[]
+  payments       Payment[]
+  adjustments    BillingAdjustment[]
+  collectionCase CollectionCase?
+  pppoeAccountActions PppoeAccountActionLog[]
+
+  @@unique([billingCycleId, subscriptionId])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id            Int             @id @default(autoincrement())
+  invoiceId     Int             @map("invoice_id")
+  servicePlanId Int?            @map("service_plan_id")
+  itemType      InvoiceItemType @default(recurring_service) @map("item_type")
+  description   String
+  quantity      Decimal         @default(1) @db.Decimal(10, 2)
+  unitPrice     Decimal         @map("unit_price") @db.Decimal(10, 2)
+  amount        Decimal         @db.Decimal(10, 2)
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  invoice       Invoice         @relation(fields: [invoiceId], references: [id])
+  servicePlan   ServicePlan?    @relation(fields: [servicePlanId], references: [id])
+
+  @@map("invoice_items")
+}
+
+model Payment {
+  id              Int           @id @default(autoincrement())
+  paymentNumber   String        @unique @map("payment_number")
+  invoiceId       Int           @map("invoice_id")
+  customerId      Int           @map("customer_id")
+  amount          Decimal       @db.Decimal(10, 2)
+  paymentDate     DateTime      @map("payment_date") @db.Date
+  paymentMethod   PaymentMethod @map("payment_method")
+  referenceNumber String?       @map("reference_number")
+  receivedBy      String?       @map("received_by")
+  collectorUserId Int?          @map("collector_user_id")
+  status          PaymentStatus @default(posted)
+  notes           String?       @db.Text
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  deletedAt       DateTime?     @map("deleted_at")
+  invoice         Invoice       @relation(fields: [invoiceId], references: [id])
+  customer        Customer      @relation(fields: [customerId], references: [id])
+  collector       User?         @relation("PaymentCollector", fields: [collectorUserId], references: [id])
+  pppoeAccountActions PppoeAccountActionLog[]
+  collectorMobileEvents CollectorMobileEvent[]
+
+  @@map("payments")
+}
+
+model BillingAdjustment {
+  id               Int                     @id @default(autoincrement())
+  adjustmentNumber String                  @unique @map("adjustment_number")
+  invoiceId        Int                     @map("invoice_id")
+  customerId       Int                     @map("customer_id")
+  adjustmentType   BillingAdjustmentType   @map("adjustment_type")
+  amount           Decimal                 @db.Decimal(10, 2)
+  reason           String
+  adjustmentDate   DateTime                @map("adjustment_date") @db.Date
+  status                BillingAdjustmentStatus @default(posted)
+  notes                 String?                 @db.Text
+  assignedFinanceUserId Int?                    @map("assigned_finance_user_id")
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
+  deletedAt             DateTime?               @map("deleted_at")
+  invoice               Invoice                 @relation(fields: [invoiceId], references: [id])
+  customer              Customer                @relation(fields: [customerId], references: [id])
+  assignedFinanceUser   User?                   @relation("AdjustmentFinanceReviewer", fields: [assignedFinanceUserId], references: [id])
+
+  @@map("billing_adjustments")
+}
+
+model CollectionCase {
+  id                Int                  @id @default(autoincrement())
+  invoiceId         Int                  @unique @map("invoice_id")
+  customerId        Int                  @map("customer_id")
+  status            CollectionCaseStatus @default(pending)
+  priority          CollectionPriority   @default(normal)
+  assignedCollector         String?              @map("assigned_collector")
+  assignedCollectorUserId   Int?                 @map("assigned_collector_user_id")
+  lastContactedAt           DateTime?            @map("last_contacted_at")
+  nextFollowUpDate          DateTime?            @map("next_follow_up_date") @db.Date
+  promiseToPayDate          DateTime?            @map("promise_to_pay_date") @db.Date
+  notes                     String?              @db.Text
+  createdAt                 DateTime             @default(now()) @map("created_at")
+  updatedAt                 DateTime             @updatedAt @map("updated_at")
+  deletedAt                 DateTime?            @map("deleted_at")
+  invoice                   Invoice              @relation(fields: [invoiceId], references: [id])
+  customer                  Customer             @relation(fields: [customerId], references: [id])
+  assignedCollectorUser       User?                @relation("CollectionCollector", fields: [assignedCollectorUserId], references: [id])
+  assignedFinanceUserId       Int?                 @map("assigned_finance_user_id")
+  assignedFinanceUser         User?                @relation("CollectionFinanceReviewer", fields: [assignedFinanceUserId], references: [id])
+  collectorMobileEvents       CollectorMobileEvent[]
+
+  @@map("collection_cases")
+}
+
+model CollectorMobileEvent {
+  id               Int                        @id @default(autoincrement())
+  localId          String                     @unique @map("local_id")
+  collectorUserId  Int                        @map("collector_user_id")
+  deviceId         String                     @map("device_id")
+  eventType        CollectorMobileEventType   @map("event_type")
+  eventPayload     Json                       @map("event_payload")
+  resultStatus     CollectorMobileEventStatus @map("result_status")
+  resultMessage    String?                    @map("result_message") @db.Text
+  paymentId        Int?                       @map("payment_id")
+  collectionCaseId   Int?                       @map("collection_case_id")
+  processedAt      DateTime                   @default(now()) @map("processed_at")
+  createdAt        DateTime                   @default(now()) @map("created_at")
+  collector        User                       @relation("CollectorMobileEvents", fields: [collectorUserId], references: [id])
+  payment          Payment?                   @relation(fields: [paymentId], references: [id])
+  collectionCase   CollectionCase?            @relation(fields: [collectionCaseId], references: [id])
+
+  @@index([collectorUserId, processedAt])
+  @@map("collector_mobile_events")
+}
+
+model MikrotikRouter {
+  id                     Int                  @id @default(autoincrement())
+  name                   String
+  host                   String
+  apiPort                Int                  @default(8728) @map("api_port")
+  username               String
+  passwordEncrypted      String               @map("password_encrypted") @db.Text
+  status                 MikrotikRouterStatus @default(active)
+  lastConnectionCheckAt  DateTime?            @map("last_connection_check_at")
+  notes                  String?              @db.Text
+  createdAt              DateTime             @default(now()) @map("created_at")
+  updatedAt              DateTime             @updatedAt @map("updated_at")
+  pppoeAccounts          PppoeAccount[]
+  pppoeSessions          PppoeSession[]
+  commandLogs            MikrotikCommandLog[]
+  monitoringTargets      NetworkMonitoringTarget[]
+  pppoeAccountActions    PppoeAccountActionLog[]
+
+  @@map("mikrotik_routers")
+}
+
+model PppoeAccount {
+  id                 Int                @id @default(autoincrement())
+  customerId         Int?               @map("customer_id")
+  servicePlanId      Int?               @map("service_plan_id")
+  routerId           Int                @map("router_id")
+  username           String
+  passwordEncrypted  String             @map("password_encrypted") @db.Text
+  profileName        String             @map("profile_name")
+  activeProfileName  String?            @map("active_profile_name")
+  remoteAddress      String?            @map("remote_address")
+  status             PppoeAccountStatus @default(active)
+  lastSyncedAt       DateTime?          @map("last_synced_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  customer           Customer?          @relation(fields: [customerId], references: [id])
+  servicePlan        ServicePlan?       @relation(fields: [servicePlanId], references: [id])
+  router             MikrotikRouter     @relation(fields: [routerId], references: [id])
+  sessions           PppoeSession[]
+  subscriptions      Subscription[]
+  actionLogs         PppoeAccountActionLog[]
+
+  @@unique([routerId, username])
+  @@map("pppoe_accounts")
+}
+
+model PppoeAccountActionLog {
+  id                Int                    @id @default(autoincrement())
+  pppoeAccountId    Int                    @map("pppoe_account_id")
+  customerId        Int?                   @map("customer_id")
+  routerId          Int                    @map("router_id")
+  action            PppoeAccountActionType
+  triggerSource     String                 @default("manual") @map("trigger_source")
+  previousStatus    PppoeAccountStatus?    @map("previous_status")
+  newStatus         PppoeAccountStatus?    @map("new_status")
+  previousProfile   String?                @map("previous_profile")
+  newProfile        String?                @map("new_profile")
+  performedByUserId Int?                   @map("performed_by_user_id")
+  invoiceId         Int?                   @map("invoice_id")
+  paymentId         Int?                   @map("payment_id")
+  mikrotikMessage   String?                @map("mikrotik_message") @db.Text
+  notes             String?                @db.Text
+  createdAt         DateTime               @default(now()) @map("created_at")
+  pppoeAccount      PppoeAccount           @relation(fields: [pppoeAccountId], references: [id])
+  customer          Customer?              @relation(fields: [customerId], references: [id])
+  router            MikrotikRouter         @relation(fields: [routerId], references: [id])
+  performedBy       User?                  @relation("PppoeActionPerformer", fields: [performedByUserId], references: [id])
+  invoice           Invoice?               @relation(fields: [invoiceId], references: [id])
+  payment           Payment?               @relation(fields: [paymentId], references: [id])
+
+  @@index([pppoeAccountId])
+  @@index([customerId])
+  @@index([createdAt])
+  @@map("pppoe_account_action_logs")
+}
+
+model PppoeSession {
+  id             Int                @id @default(autoincrement())
+  pppoeAccountId Int?               @map("pppoe_account_id")
+  routerId       Int                @map("router_id")
+  username       String
+  ipAddress      String?            @map("ip_address")
+  macAddress     String?            @map("mac_address")
+  uptime         String?
+  rxBytes        BigInt             @default(0) @map("rx_bytes")
+  txBytes        BigInt             @default(0) @map("tx_bytes")
+  status         PppoeSessionStatus @default(offline)
+  checkedAt      DateTime           @default(now()) @map("checked_at")
+  pppoeAccount   PppoeAccount?      @relation(fields: [pppoeAccountId], references: [id])
+  router         MikrotikRouter     @relation(fields: [routerId], references: [id])
+
+  @@map("pppoe_sessions")
+}
+
+model MikrotikCommandLog {
+  id              Int                   @id @default(autoincrement())
+  routerId        Int                   @map("router_id")
+  commandType     String                @map("command_type")
+  commandPayload  Json?                 @map("command_payload")
+  status          MikrotikCommandStatus @default(mock_logged)
+  responseMessage String?               @map("response_message") @db.Text
+  createdAt       DateTime              @default(now()) @map("created_at")
+  router          MikrotikRouter        @relation(fields: [routerId], references: [id])
+
+  @@map("mikrotik_command_logs")
+}
+
+model OltDevice {
+  id             Int              @id @default(autoincrement())
+  name           String
+  vendor         String
+  model          String?
+  host           String           @unique
+  managementIp   String?          @map("management_ip")
+  ponTechnology  OltPonTechnology @default(gpon) @map("pon_technology")
+  ponPortCount   Int              @default(0) @map("pon_port_count")
+  uplinkPortCount Int             @default(0) @map("uplink_port_count")
+  snmpVersion    SnmpVersion      @default(v2c) @map("snmp_version")
+  snmpCommunity  String?          @map("snmp_community")
+  status         OltDeviceStatus  @default(active)
+  location       String?
+  notes          String?          @db.Text
+  lastPolledAt   DateTime?        @map("last_polled_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  deletedAt      DateTime?        @map("deleted_at")
+  onuDevices     OnuDevice[]
+  monitoringTargets NetworkMonitoringTarget[]
+
+  @@map("olt_devices")
+}
+
+model OnuDevice {
+  id                     Int             @id @default(autoincrement())
+  oltDeviceId            Int             @map("olt_device_id")
+  customerId             Int?            @map("customer_id")
+  subscriptionId         Int?            @map("subscription_id")
+  name                   String?
+  serialNumber           String          @unique @map("serial_number")
+  macAddress             String?         @map("mac_address")
+  ponPort                String          @map("pon_port")
+  onuId                  String          @map("onu_id")
+  vlan                   Int?
+  profileName            String?         @map("profile_name")
+  status                 OnuDeviceStatus @default(pending)
+  rxPower                Decimal?        @map("rx_power") @db.Decimal(6, 2)
+  txPower                Decimal?        @map("tx_power") @db.Decimal(6, 2)
+  distanceMeters         Int?            @map("distance_meters")
+  lastRegisteredAt       DateTime?       @map("last_registered_at")
+  lastDeregisteredAt     DateTime?       @map("last_deregistered_at")
+  lastDeregisteredReason String?         @map("last_deregistered_reason")
+  location               String?
+  notes                  String?         @db.Text
+  lastPolledAt           DateTime?       @map("last_polled_at")
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
+  deletedAt              DateTime?       @map("deleted_at")
+  oltDevice              OltDevice       @relation(fields: [oltDeviceId], references: [id])
+  customer               Customer?       @relation(fields: [customerId], references: [id])
+  subscription           Subscription?   @relation(fields: [subscriptionId], references: [id])
+  monitoringTargets      NetworkMonitoringTarget[]
+
+  @@unique([oltDeviceId, ponPort, onuId])
+  @@map("onu_devices")
+}
+
+model NetworkMonitoringTarget {
+  id                 Int                      @id @default(autoincrement())
+  name               String
+  deviceType         NetworkMonitorDeviceType @default(other) @map("device_type")
+  monitorMethod      NetworkMonitorMethod     @default(icmp) @map("monitor_method")
+  host               String
+  mikrotikRouterId   Int?                     @map("mikrotik_router_id")
+  oltDeviceId        Int?                     @map("olt_device_id")
+  onuDeviceId        Int?                     @map("onu_device_id")
+  snmpCommunity      String?                  @map("snmp_community")
+  status             NetworkMonitorStatus     @default(unknown)
+  latencyMs          Decimal?                 @map("latency_ms") @db.Decimal(8, 2)
+  packetLossPercent  Decimal?                 @map("packet_loss_percent") @db.Decimal(5, 2)
+  uptimeSeconds      Int?                     @map("uptime_seconds")
+  cpuUsagePercent    Decimal?                 @map("cpu_usage_percent") @db.Decimal(5, 2)
+  memoryUsagePercent Decimal?                 @map("memory_usage_percent") @db.Decimal(5, 2)
+  interfaceStatus    String?                  @map("interface_status")
+  interfaceErrors    Int?                     @default(0) @map("interface_errors")
+  lastCheckedAt      DateTime?                @map("last_checked_at")
+  location           String?
+  notes              String?                  @db.Text
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
+  deletedAt          DateTime?                @map("deleted_at")
+  mikrotikRouter     MikrotikRouter?          @relation(fields: [mikrotikRouterId], references: [id])
+  oltDevice          OltDevice?               @relation(fields: [oltDeviceId], references: [id])
+  onuDevice          OnuDevice?               @relation(fields: [onuDeviceId], references: [id])
+  checks             NetworkMonitoringCheck[]
+  alerts             NetworkAlert[]
+
+  @@unique([deviceType, host])
+  @@map("network_monitoring_targets")
+}
+
+model NetworkMonitoringCheck {
+  id                 Int                     @id @default(autoincrement())
+  targetId           Int                     @map("target_id")
+  status             NetworkMonitorStatus
+  latencyMs          Decimal?                @map("latency_ms") @db.Decimal(8, 2)
+  packetLossPercent  Decimal?                @map("packet_loss_percent") @db.Decimal(5, 2)
+  uptimeSeconds      Int?                    @map("uptime_seconds")
+  cpuUsagePercent    Decimal?                @map("cpu_usage_percent") @db.Decimal(5, 2)
+  memoryUsagePercent Decimal?                @map("memory_usage_percent") @db.Decimal(5, 2)
+  interfaceStatus    String?                 @map("interface_status")
+  interfaceErrors    Int?                    @default(0) @map("interface_errors")
+  checkedAt          DateTime                @default(now()) @map("checked_at")
+  notes              String?                 @db.Text
+  target             NetworkMonitoringTarget @relation(fields: [targetId], references: [id])
+  alerts             NetworkAlert[]
+
+  @@index([targetId, checkedAt])
+  @@map("network_monitoring_checks")
+}
+
+model NetworkAlert {
+  id             Int                      @id @default(autoincrement())
+  targetId       Int?                     @map("target_id")
+  checkId        Int?                     @map("check_id")
+  title          String
+  description    String?                  @db.Text
+  severity       NetworkAlertSeverity     @default(warning)
+  status         NetworkAlertStatus       @default(open)
+  source         NetworkAlertSource       @default(manual)
+  metric         String?
+  threshold      String?
+  observedValue  String?                  @map("observed_value")
+  assignedTo     String?                  @map("assigned_to")
+  acknowledgedBy String?                  @map("acknowledged_by")
+  acknowledgedAt DateTime?                @map("acknowledged_at")
+  resolvedBy     String?                  @map("resolved_by")
+  resolvedAt     DateTime?                @map("resolved_at")
+  resolution     String?                  @db.Text
+  occurredAt     DateTime                 @default(now()) @map("occurred_at")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+  deletedAt      DateTime?                @map("deleted_at")
+  target         NetworkMonitoringTarget? @relation(fields: [targetId], references: [id])
+  check          NetworkMonitoringCheck?  @relation(fields: [checkId], references: [id])
+
+  @@index([status, severity])
+  @@index([targetId, occurredAt])
+  @@map("network_alerts")
+}
+
+model InventoryCategory {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  name        String
+  description String?   @db.Text
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+  items       InventoryItem[]
+
+  @@map("inventory_categories")
+}
+
+model Warehouse {
+  id            Int       @id @default(autoincrement())
+  code          String    @unique
+  name          String
+  address       String?   @db.Text
+  contactPerson String?   @map("contact_person")
+  contactNumber String?   @map("contact_number")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+  stocks        InventoryStock[]
+  movements     InventoryMovement[] @relation("MovementWarehouse")
+  transferIns   InventoryMovement[] @relation("MovementToWarehouse")
+  adjustments   InventoryAdjustment[]
+  goodsReceipts GoodsReceipt[]
+  projectMaterialUsages ProjectMaterialUsage[]
+
+  @@map("warehouses")
+}
+
+model InventoryItem {
+  id             Int                @id @default(autoincrement())
+  categoryId     Int                @map("category_id")
+  code           String             @unique
+  name           String
+  description    String?            @db.Text
+  itemType       InventoryItemType   @default(material) @map("item_type")
+  unit           String             @default("pcs")
+  unitCost       Decimal            @default(0) @map("unit_cost") @db.Decimal(12, 2)
+  reorderLevel   Decimal            @default(0) @map("reorder_level") @db.Decimal(12, 2)
+  isActive       Boolean            @default(true) @map("is_active")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  deletedAt      DateTime?          @map("deleted_at")
+  category       InventoryCategory  @relation(fields: [categoryId], references: [id])
+  stocks         InventoryStock[]
+  movements      InventoryMovement[]
+  adjustments    InventoryAdjustment[]
+  purchaseRequestItems PurchaseRequestItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  goodsReceiptItems GoodsReceiptItem[]
+  projectEstimateItems ProjectEstimateItem[]
+  projectBomItems      ProjectBomItem[]
+  projectMaterialUsageItems ProjectMaterialUsageItem[]
+
+  @@map("inventory_items")
+}
+
+model InventoryStock {
+  id          Int           @id @default(autoincrement())
+  itemId      Int           @map("item_id")
+  warehouseId Int           @map("warehouse_id")
+  quantity    Decimal       @default(0) @db.Decimal(12, 2)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  item        InventoryItem @relation(fields: [itemId], references: [id])
+  warehouse   Warehouse     @relation(fields: [warehouseId], references: [id])
+
+  @@unique([itemId, warehouseId])
+  @@map("inventory_stocks")
+}
+
+model InventoryMovement {
+  id            Int                   @id @default(autoincrement())
+  itemId        Int                   @map("item_id")
+  warehouseId   Int                   @map("warehouse_id")
+  toWarehouseId Int?                  @map("to_warehouse_id")
+  movementType  InventoryMovementType @map("movement_type")
+  quantity      Decimal               @db.Decimal(12, 2)
+  unitCost      Decimal?              @map("unit_cost") @db.Decimal(12, 2)
+  referenceType String?               @map("reference_type")
+  referenceNo   String?               @map("reference_no")
+  notes         String?               @db.Text
+  createdAt     DateTime              @default(now()) @map("created_at")
+  item          InventoryItem         @relation(fields: [itemId], references: [id])
+  warehouse     Warehouse             @relation("MovementWarehouse", fields: [warehouseId], references: [id])
+  toWarehouse   Warehouse?            @relation("MovementToWarehouse", fields: [toWarehouseId], references: [id])
+
+  @@index([itemId, createdAt])
+  @@index([warehouseId, createdAt])
+  @@map("inventory_movements")
+}
+
+model InventoryAdjustment {
+  id               Int                     @id @default(autoincrement())
+  itemId           Int                     @map("item_id")
+  warehouseId      Int                     @map("warehouse_id")
+  adjustmentType   InventoryAdjustmentType @map("adjustment_type")
+  quantity         Decimal                 @db.Decimal(12, 2)
+  previousQuantity Decimal                 @map("previous_quantity") @db.Decimal(12, 2)
+  newQuantity      Decimal                 @map("new_quantity") @db.Decimal(12, 2)
+  reason           String
+  notes            String?                 @db.Text
+  createdAt        DateTime                @default(now()) @map("created_at")
+  item             InventoryItem           @relation(fields: [itemId], references: [id])
+  warehouse        Warehouse               @relation(fields: [warehouseId], references: [id])
+
+  @@index([itemId, createdAt])
+  @@index([warehouseId, createdAt])
+  @@map("inventory_adjustments")
+}
+
+model Supplier {
+  id            Int       @id @default(autoincrement())
+  code          String    @unique
+  name          String
+  contactPerson String?   @map("contact_person")
+  contactNumber String?   @map("contact_number")
+  email         String?
+  address       String?   @db.Text
+  tin           String?
+  paymentTerms  String?   @map("payment_terms")
+  notes         String?   @db.Text
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+  purchaseRequests PurchaseRequest[]
+  purchaseOrders PurchaseOrder[]
+  goodsReceipts GoodsReceipt[]
+  expenses       Expense[]
+
+  @@map("suppliers")
+}
+
+model PurchaseRequest {
+  id               Int                     @id @default(autoincrement())
+  requestNumber    String                  @unique @map("request_number")
+  supplierId       Int?                    @map("supplier_id")
+  status           PurchaseRequestStatus   @default(draft)
+  priority         PurchaseRequestPriority @default(normal)
+  requestedBy      String?                 @map("requested_by")
+  neededDate       DateTime?               @map("needed_date") @db.Date
+  purpose          String?                 @db.Text
+  notes            String?                 @db.Text
+  approvedBy            String?                 @map("approved_by")
+  approvedAt            DateTime?               @map("approved_at")
+  rejectedReason        String?                 @map("rejected_reason") @db.Text
+  financeReviewerUserId Int?                    @map("finance_reviewer_user_id")
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
+  deletedAt             DateTime?               @map("deleted_at")
+  supplier              Supplier?               @relation(fields: [supplierId], references: [id])
+  financeReviewer       User?                   @relation("PurchaseRequestFinanceReviewer", fields: [financeReviewerUserId], references: [id])
+  items            PurchaseRequestItem[]
+  purchaseOrders   PurchaseOrder[]
+
+  @@map("purchase_requests")
+}
+
+model PurchaseRequestItem {
+  id                Int             @id @default(autoincrement())
+  purchaseRequestId Int             @map("purchase_request_id")
+  itemId            Int             @map("item_id")
+  description       String?
+  quantity          Decimal         @db.Decimal(12, 2)
+  estimatedUnitCost Decimal?        @map("estimated_unit_cost") @db.Decimal(12, 2)
+  notes             String?         @db.Text
+  createdAt         DateTime        @default(now()) @map("created_at")
+  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id])
+  item              InventoryItem   @relation(fields: [itemId], references: [id])
+
+  @@index([purchaseRequestId])
+  @@index([itemId])
+  @@map("purchase_request_items")
+}
+
+model PurchaseOrder {
+  id                Int                 @id @default(autoincrement())
+  poNumber          String              @unique @map("po_number")
+  supplierId        Int                 @map("supplier_id")
+  purchaseRequestId Int?                @map("purchase_request_id")
+  status            PurchaseOrderStatus @default(draft)
+  orderDate         DateTime            @default(now()) @map("order_date") @db.Date
+  expectedDate      DateTime?           @map("expected_date") @db.Date
+  paymentTerms      String?             @map("payment_terms")
+  deliveryAddress   String?             @map("delivery_address") @db.Text
+  notes             String?             @db.Text
+  issuedBy          String?             @map("issued_by")
+  issuedAt          DateTime?           @map("issued_at")
+  cancelledReason   String?             @map("cancelled_reason") @db.Text
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+  deletedAt         DateTime?           @map("deleted_at")
+  supplier          Supplier            @relation(fields: [supplierId], references: [id])
+  purchaseRequest   PurchaseRequest?    @relation(fields: [purchaseRequestId], references: [id])
+  items             PurchaseOrderItem[]
+  goodsReceipts     GoodsReceipt[]
+
+  @@index([supplierId])
+  @@index([purchaseRequestId])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               Int           @id @default(autoincrement())
+  purchaseOrderId  Int           @map("purchase_order_id")
+  itemId           Int           @map("item_id")
+  description      String?
+  quantity         Decimal       @db.Decimal(12, 2)
+  unitCost         Decimal       @map("unit_cost") @db.Decimal(12, 2)
+  receivedQuantity Decimal       @default(0) @map("received_quantity") @db.Decimal(12, 2)
+  notes            String?       @db.Text
+  createdAt        DateTime      @default(now()) @map("created_at")
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  item             InventoryItem @relation(fields: [itemId], references: [id])
+  receiptItems     GoodsReceiptItem[]
+
+  @@index([purchaseOrderId])
+  @@index([itemId])
+  @@map("purchase_order_items")
+}
+
+model GoodsReceipt {
+  id                Int                @id @default(autoincrement())
+  receiptNumber     String             @unique @map("receipt_number")
+  purchaseOrderId   Int                @map("purchase_order_id")
+  supplierId        Int                @map("supplier_id")
+  warehouseId       Int                @map("warehouse_id")
+  status            GoodsReceiptStatus @default(received)
+  receivedDate      DateTime           @default(now()) @map("received_date") @db.Date
+  receivedBy        String?            @map("received_by")
+  deliveryReceiptNo String?            @map("delivery_receipt_no")
+  notes             String?            @db.Text
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  deletedAt         DateTime?          @map("deleted_at")
+  purchaseOrder     PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id])
+  supplier          Supplier           @relation(fields: [supplierId], references: [id])
+  warehouse         Warehouse          @relation(fields: [warehouseId], references: [id])
+  items             GoodsReceiptItem[]
+
+  @@index([purchaseOrderId])
+  @@index([supplierId])
+  @@index([warehouseId])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptItem {
+  id                  Int               @id @default(autoincrement())
+  goodsReceiptId      Int               @map("goods_receipt_id")
+  purchaseOrderItemId Int               @map("purchase_order_item_id")
+  itemId              Int               @map("item_id")
+  quantityReceived    Decimal           @map("quantity_received") @db.Decimal(12, 2)
+  unitCost            Decimal           @map("unit_cost") @db.Decimal(12, 2)
+  notes               String?           @db.Text
+  createdAt           DateTime          @default(now()) @map("created_at")
+  goodsReceipt        GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id])
+  purchaseOrderItem   PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id])
+  item                InventoryItem     @relation(fields: [itemId], references: [id])
+
+  @@index([goodsReceiptId])
+  @@index([purchaseOrderItemId])
+  @@index([itemId])
+  @@map("goods_receipt_items")
+}
+
+model TicketCategory {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  name        String
+  description String?   @db.Text
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+  tickets     Ticket[]
+
+  @@map("ticket_categories")
+}
+
+model Ticket {
+  id             Int            @id @default(autoincrement())
+  ticketNumber   String         @unique @map("ticket_number")
+  customerId     Int?           @map("customer_id")
+  subscriptionId Int?           @map("subscription_id")
+  categoryId     Int            @map("category_id")
+  subject        String
+  description    String         @db.Text
+  status         TicketStatus   @default(open)
+  priority       TicketPriority @default(normal)
+  reportedBy     String?        @map("reported_by")
+  contactNumber  String?        @map("contact_number")
+  location       String?        @db.Text
+  dueAt          DateTime?      @map("due_at")
+  resolvedAt     DateTime?      @map("resolved_at")
+  resolution     String?        @db.Text
+  notes          String?        @db.Text
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  deletedAt      DateTime?      @map("deleted_at")
+  customer       Customer?      @relation(fields: [customerId], references: [id])
+  subscription   Subscription?  @relation(fields: [subscriptionId], references: [id])
+  category       TicketCategory @relation(fields: [categoryId], references: [id])
+  assignments    TechnicianAssignment[]
+
+  @@index([customerId])
+  @@index([subscriptionId])
+  @@index([categoryId])
+  @@map("tickets")
+}
+
+model TechnicianAssignment {
+  id             Int                         @id @default(autoincrement())
+  ticketId       Int                         @map("ticket_id")
+  technicianId   Int                         @map("technician_id")
+  status         TechnicianAssignmentStatus  @default(assigned)
+  scheduledAt    DateTime?                   @map("scheduled_at")
+  startedAt      DateTime?                   @map("started_at")
+  completedAt    DateTime?                   @map("completed_at")
+  notes          String?                     @db.Text
+  completionNotes String?                    @map("completion_notes") @db.Text
+  createdAt      DateTime                    @default(now()) @map("created_at")
+  updatedAt      DateTime                    @updatedAt @map("updated_at")
+  deletedAt      DateTime?                   @map("deleted_at")
+  ticket         Ticket                      @relation(fields: [ticketId], references: [id])
+  technician     User                        @relation(fields: [technicianId], references: [id])
+
+  @@index([ticketId])
+  @@index([technicianId])
+  @@map("technician_assignments")
+}
+
+model Project {
+  id              Int                    @id @default(autoincrement())
+  code            String                 @unique
+  name            String
+  description     String?                @db.Text
+  projectType     ProjectType            @default(expansion) @map("project_type")
+  status          ProjectStatus          @default(planning)
+  customerId      Int?                   @map("customer_id")
+  location        String?                @db.Text
+  startDate       DateTime?              @map("start_date") @db.Date
+  targetDate      DateTime?              @map("target_date") @db.Date
+  completedAt     DateTime?              @map("completed_at")
+  budget            Decimal                @default(0) @db.Decimal(12, 2)
+  managerName       String?                @map("manager_name")
+  contractorUserId  Int?                   @map("contractor_user_id")
+  notes             String?                @db.Text
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+  deletedAt         DateTime?              @map("deleted_at")
+  customer          Customer?              @relation(fields: [customerId], references: [id])
+  contractor        User?                  @relation("ProjectContractor", fields: [contractorUserId], references: [id])
+  estimates       ProjectEstimate[]
+  boms            ProjectBom[]
+  materialUsages  ProjectMaterialUsage[]
+  costing         ProjectCosting?
+
+  @@index([customerId])
+  @@map("projects")
+}
+
+model ProjectEstimate {
+  id             Int                   @id @default(autoincrement())
+  projectId      Int                   @map("project_id")
+  estimateNumber String                @unique @map("estimate_number")
+  status         ProjectEstimateStatus @default(draft)
+  validUntil     DateTime?             @map("valid_until") @db.Date
+  laborCost      Decimal               @default(0) @map("labor_cost") @db.Decimal(12, 2)
+  overheadCost   Decimal               @default(0) @map("overhead_cost") @db.Decimal(12, 2)
+  notes          String?               @db.Text
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+  deletedAt      DateTime?             @map("deleted_at")
+  project        Project               @relation(fields: [projectId], references: [id])
+  items          ProjectEstimateItem[]
+
+  @@index([projectId])
+  @@map("project_estimates")
+}
+
+model ProjectEstimateItem {
+  id              Int             @id @default(autoincrement())
+  estimateId      Int             @map("estimate_id")
+  itemId          Int?            @map("item_id")
+  description     String
+  quantity        Decimal         @db.Decimal(12, 2)
+  unit            String          @default("pcs")
+  unitCost        Decimal         @map("unit_cost") @db.Decimal(12, 2)
+  notes           String?         @db.Text
+  createdAt       DateTime        @default(now()) @map("created_at")
+  estimate        ProjectEstimate @relation(fields: [estimateId], references: [id])
+  item            InventoryItem?  @relation(fields: [itemId], references: [id])
+
+  @@index([estimateId])
+  @@index([itemId])
+  @@map("project_estimate_items")
+}
+
+model ProjectBom {
+  id        Int              @id @default(autoincrement())
+  projectId Int              @map("project_id")
+  bomNumber String           @unique @map("bom_number")
+  status    ProjectBomStatus @default(draft)
+  notes     String?          @db.Text
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+  deletedAt DateTime?        @map("deleted_at")
+  project   Project          @relation(fields: [projectId], references: [id])
+  items     ProjectBomItem[]
+
+  @@index([projectId])
+  @@map("project_boms")
+}
+
+model ProjectBomItem {
+  id                Int           @id @default(autoincrement())
+  bomId             Int           @map("bom_id")
+  itemId            Int           @map("item_id")
+  quantity          Decimal       @db.Decimal(12, 2)
+  estimatedUnitCost Decimal       @default(0) @map("estimated_unit_cost") @db.Decimal(12, 2)
+  notes             String?       @db.Text
+  createdAt         DateTime      @default(now()) @map("created_at")
+  bom               ProjectBom    @relation(fields: [bomId], references: [id])
+  item              InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@index([bomId])
+  @@index([itemId])
+  @@map("project_bom_items")
+}
+
+model ProjectMaterialUsage {
+  id          Int                        @id @default(autoincrement())
+  projectId   Int                        @map("project_id")
+  warehouseId Int                        @map("warehouse_id")
+  usageNumber String                     @unique @map("usage_number")
+  usedDate    DateTime                   @default(now()) @map("used_date") @db.Date
+  usedBy      String?                    @map("used_by")
+  notes       String?                    @db.Text
+  createdAt   DateTime                   @default(now()) @map("created_at")
+  updatedAt   DateTime                   @updatedAt @map("updated_at")
+  deletedAt   DateTime?                  @map("deleted_at")
+  project     Project                    @relation(fields: [projectId], references: [id])
+  warehouse   Warehouse                  @relation(fields: [warehouseId], references: [id])
+  items       ProjectMaterialUsageItem[]
+
+  @@index([projectId])
+  @@index([warehouseId])
+  @@map("project_material_usages")
+}
+
+model ProjectMaterialUsageItem {
+  id              Int                  @id @default(autoincrement())
+  materialUsageId Int                  @map("material_usage_id")
+  itemId          Int                  @map("item_id")
+  quantity        Decimal              @db.Decimal(12, 2)
+  unitCost        Decimal              @default(0) @map("unit_cost") @db.Decimal(12, 2)
+  notes           String?              @db.Text
+  createdAt       DateTime             @default(now()) @map("created_at")
+  materialUsage   ProjectMaterialUsage @relation(fields: [materialUsageId], references: [id])
+  item            InventoryItem        @relation(fields: [itemId], references: [id])
+
+  @@index([materialUsageId])
+  @@index([itemId])
+  @@map("project_material_usage_items")
+}
+
+model ProjectCosting {
+  id           Int                  @id @default(autoincrement())
+  projectId    Int                  @unique @map("project_id")
+  status       ProjectCostingStatus @default(draft)
+  laborCost    Decimal              @default(0) @map("labor_cost") @db.Decimal(12, 2)
+  overheadCost Decimal              @default(0) @map("overhead_cost") @db.Decimal(12, 2)
+  otherCost    Decimal              @default(0) @map("other_cost") @db.Decimal(12, 2)
+  notes        String?              @db.Text
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+  deletedAt    DateTime?            @map("deleted_at")
+  project      Project              @relation(fields: [projectId], references: [id])
+
+  @@map("project_costings")
+}
+
+model ExpenseCategory {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?   @db.Text
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+  expenses    Expense[]
+
+  @@map("expense_categories")
+}
+
+model Expense {
+  id                    Int             @id @default(autoincrement())
+  expenseNumber         String          @unique @map("expense_number")
+  expenseCategoryId     Int             @map("expense_category_id")
+  supplierId            Int?            @map("supplier_id")
+  expenseDate           DateTime        @map("expense_date") @db.Date
+  amount                Decimal         @db.Decimal(12, 2)
+  payee                 String
+  paymentMethod         PaymentMethod   @map("payment_method")
+  referenceNumber       String?         @map("reference_number")
+  description           String          @db.Text
+  notes                 String?         @db.Text
+  status                ExpenseStatus   @default(recorded)
+  recordedByUserId      Int?            @map("recorded_by_user_id")
+  assignedFinanceUserId Int?            @map("assigned_finance_user_id")
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+  deletedAt             DateTime?       @map("deleted_at")
+  category              ExpenseCategory @relation(fields: [expenseCategoryId], references: [id])
+  supplier              Supplier?       @relation(fields: [supplierId], references: [id])
+  recordedBy            User?           @relation("ExpenseRecordedBy", fields: [recordedByUserId], references: [id])
+  assignedFinanceUser   User?           @relation("ExpenseFinanceReviewer", fields: [assignedFinanceUserId], references: [id])
+
+  @@index([expenseCategoryId])
+  @@index([supplierId])
+  @@index([expenseDate])
+  @@map("expenses")
+}

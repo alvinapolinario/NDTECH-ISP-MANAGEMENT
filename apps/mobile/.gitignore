@@ -1,0 +1,27 @@
+# Flutter/mobile artifacts
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+local.properties
+
+# Android
+android/.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/key.properties
+
+# iOS (if added later)
+ios/Pods/
+ios/.symlinks/
+
+# IDE
+.idea/
+*.iml
+
+# Misc
+*.log
