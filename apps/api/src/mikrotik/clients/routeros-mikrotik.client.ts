@@ -1,4 +1,5 @@
 import { RouterOSAPI } from 'node-routeros';
+import './routeros-empty-reply.patch';
 import {
   MikroTikActiveSession,
   MikroTikClient,
@@ -35,7 +36,7 @@ export class RouterOsMikrotikClient implements MikroTikClient {
 
   async listPppoeSecrets(): Promise<MikroTikPppoeSecret[]> {
     const rows = await this.withConnection((api) =>
-      api.write('/ppp/secret/print'),
+      this.writePrint(api, '/ppp/secret/print'),
     );
 
     return rows
@@ -45,7 +46,7 @@ export class RouterOsMikrotikClient implements MikroTikClient {
 
   async listPppoeProfiles(): Promise<MikroTikPppProfile[]> {
     const rows = await this.withConnection((api) =>
-      api.write('/ppp/profile/print'),
+      this.writePrint(api, '/ppp/profile/print'),
     );
 
     return rows
@@ -56,7 +57,7 @@ export class RouterOsMikrotikClient implements MikroTikClient {
 
   async listActiveSessions(): Promise<MikroTikActiveSession[]> {
     const rows = await this.withConnection((api) =>
-      api.write('/ppp/active/print'),
+      this.writePrint(api, '/ppp/active/print'),
     );
 
     return rows
@@ -148,11 +149,35 @@ export class RouterOsMikrotikClient implements MikroTikClient {
   }
 
   private async findSecretId(api: RouterOSAPI, username: string) {
-    const rows = (await api.write('/ppp/secret/print', [
+    const rows = await this.writePrint(api, '/ppp/secret/print', [
       `?name=${username}`,
-    ])) as RouterOsRow[];
+    ]);
 
     return rows[0]?.['.id'];
+  }
+
+  private async writePrint(
+    api: RouterOSAPI,
+    command: string,
+    params: string[] = [],
+  ): Promise<RouterOsRow[]> {
+    try {
+      return (await api.write(command, params)) as RouterOsRow[];
+    } catch (error) {
+      if (this.isEmptyListReply(error)) {
+        return [];
+      }
+
+      throw error;
+    }
+  }
+
+  private isEmptyListReply(error: unknown) {
+    const errno = (error as { errno?: unknown })?.errno;
+    const message =
+      error instanceof Error ? error.message : String(error ?? '');
+
+    return errno === 'UNKNOWNREPLY' && message.includes('!empty');
   }
 
   private mapPppoeSecret(row: RouterOsRow): MikroTikPppoeSecret {
@@ -166,8 +191,10 @@ export class RouterOsMikrotikClient implements MikroTikClient {
   }
 
   private mapActiveSession(row: RouterOsRow): MikroTikActiveSession {
+    const username = row.name ?? row.user ?? row['user-name'] ?? '';
+
     return {
-      username: row.name ?? '',
+      username,
       ipAddress: row.address,
       macAddress: row['caller-id'],
       uptime: row.uptime,
@@ -182,12 +209,14 @@ export class RouterOsMikrotikClient implements MikroTikClient {
   }
 
   private createApi() {
+    const timeout = Number(process.env.MIKROTIK_API_TIMEOUT ?? 60);
+
     return new RouterOSAPI({
       host: this.connection.host,
       user: this.connection.username,
       password: this.connection.password,
       port: this.connection.apiPort,
-      timeout: 10,
+      timeout: Number.isFinite(timeout) && timeout > 0 ? timeout : 60,
     });
   }
 
@@ -207,8 +236,20 @@ export class RouterOsMikrotikClient implements MikroTikClient {
   }
 
   private formatError(error: unknown) {
-    if (error instanceof Error) {
-      return error.message;
+    if (this.isEmptyListReply(error)) {
+      return 'Router returned an empty list.';
+    }
+
+    if (error instanceof Error && error.message.trim()) {
+      return error.message.trim();
+    }
+
+    const errno = (error as { errno?: number | string })?.errno;
+    if (errno === -111 || errno === -61) {
+      return 'Connection refused. Enable RouterOS API (/ip service enable api) and allow this server in the firewall.';
+    }
+    if (errno === -110 || errno === -60) {
+      return 'Connection timed out. Check router host, routing, and firewall rules.';
     }
 
     return 'Unable to connect to MikroTik router';

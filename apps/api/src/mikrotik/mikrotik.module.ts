@@ -27,6 +27,6 @@ import { PppoeAccountActionLoggerService } from './pppoe-account-action-logger.s
     PppoeAccountsService,
     PppoeSessionsService,
   ],
-  exports: [PppoeAccountsService],
+  exports: [PppoeAccountsService, PppoeSessionsService, SecretCryptoService],
 })
 export class MikrotikModule {}

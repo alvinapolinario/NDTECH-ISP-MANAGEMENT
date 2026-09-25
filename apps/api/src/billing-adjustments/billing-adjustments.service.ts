@@ -1,11 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import {
-  BillingAdjustmentStatus,
-  BillingAdjustmentType,
-  InvoiceStatus,
-  PaymentStatus,
-  Prisma,
-} from '@prisma/client';
+import { BillingAdjustmentStatus, InvoiceStatus } from '@prisma/client';
+import { InvoiceLedgerService } from '../billing/invoice-ledger.service';
 import { getPagination } from '../common/pagination';
 import { resolveStaffAssignment, STAFF_ROLES } from '../common/staff-role';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,7 +10,10 @@ import { UpdateBillingAdjustmentDto } from './dto/update-billing-adjustment.dto'
 
 @Injectable()
 export class BillingAdjustmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly invoiceLedger: InvoiceLedgerService,
+  ) {}
 
   async create(dto: CreateBillingAdjustmentDto) {
     const invoice = await this.prisma.invoice.findFirst({
@@ -49,7 +47,7 @@ export class BillingAdjustmentsService {
       include: this.includeRelations(),
     });
 
-    await this.recalculateInvoice(invoice.id);
+    await this.invoiceLedger.recalculate(invoice.id);
     return adjustment;
   }
 
@@ -136,7 +134,7 @@ export class BillingAdjustmentsService {
       include: this.includeRelations(),
     });
 
-    await this.recalculateInvoice(current.invoiceId);
+    await this.invoiceLedger.recalculate(current.invoiceId);
     return updated;
   }
 
@@ -156,78 +154,27 @@ export class BillingAdjustmentsService {
       include: this.includeRelations(),
     });
 
-    await this.recalculateInvoice(current.invoiceId);
+    await this.invoiceLedger.recalculate(current.invoiceId);
     return deleted;
-  }
-
-  private async recalculateInvoice(invoiceId: number) {
-    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
-    if (!invoice) return;
-
-    const [credits, charges, payments] = await Promise.all([
-      this.adjustmentSum(invoiceId, BillingAdjustmentType.credit),
-      this.adjustmentSum(invoiceId, BillingAdjustmentType.charge),
-      this.paymentSum(invoiceId),
-    ]);
-    const total = Prisma.Decimal.max(
-      new Prisma.Decimal(0),
-      invoice.subtotal.plus(charges).minus(credits),
-    );
-    const balance = Prisma.Decimal.max(new Prisma.Decimal(0), total.minus(payments));
-    const status =
-      balance.equals(0) && payments.greaterThan(0)
-        ? InvoiceStatus.paid
-        : payments.greaterThan(0)
-          ? InvoiceStatus.partially_paid
-          : invoice.status === InvoiceStatus.draft
-            ? InvoiceStatus.draft
-            : InvoiceStatus.issued;
-
-    await this.prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        total,
-        amountPaid: payments,
-        balance,
-        status,
-      },
-    });
-  }
-
-  private async adjustmentSum(invoiceId: number, adjustmentType: BillingAdjustmentType) {
-    const aggregate = await this.prisma.billingAdjustment.aggregate({
-      where: {
-        invoiceId,
-        adjustmentType,
-        status: BillingAdjustmentStatus.posted,
-        deletedAt: null,
-      },
-      _sum: { amount: true },
-    });
-
-    return aggregate._sum.amount ?? new Prisma.Decimal(0);
-  }
-
-  private async paymentSum(invoiceId: number) {
-    const aggregate = await this.prisma.payment.aggregate({
-      where: {
-        invoiceId,
-        status: PaymentStatus.posted,
-        deletedAt: null,
-      },
-      _sum: { amount: true },
-    });
-
-    return aggregate._sum.amount ?? new Prisma.Decimal(0);
   }
 
   private async nextAdjustmentNumber() {
     const now = new Date();
     const prefix = `ADJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const count = await this.prisma.billingAdjustment.count({
-      where: { adjustmentNumber: { startsWith: prefix } },
-    });
-    return `${prefix}-${String(count + 1).padStart(4, '0')}`;
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const count = await this.prisma.billingAdjustment.count({
+        where: { adjustmentNumber: { startsWith: prefix } },
+      });
+      const candidate = `${prefix}-${String(count + 1 + attempt).padStart(4, '0')}`;
+      const exists = await this.prisma.billingAdjustment.findUnique({
+        where: { adjustmentNumber: candidate },
+        select: { id: true },
+      });
+      if (!exists) return candidate;
+    }
+
+    return `${prefix}-${Date.now()}`;
   }
 
   private includeRelations() {

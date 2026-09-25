@@ -9,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { ListPppoeAccountOptionsQueryDto } from './dto/list-pppoe-account-options-query.dto';
 import { ListSubscriptionsQueryDto } from './dto/list-subscriptions-query.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { SubscriptionsService } from './subscriptions.service';
@@ -20,6 +21,11 @@ export class SubscriptionsController {
   @Post()
   create(@Body() dto: CreateSubscriptionDto) {
     return this.subscriptionsService.create(dto);
+  }
+
+  @Get('pppoe-account-options')
+  listPppoeAccountOptions(@Query() query: ListPppoeAccountOptionsQueryDto) {
+    return this.subscriptionsService.listPppoeAccountOptions(query);
   }
 
   @Get()

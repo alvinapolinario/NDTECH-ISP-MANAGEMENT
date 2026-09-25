@@ -4,6 +4,7 @@ set -e
 cd /app/apps/api
 
 echo "Applying database migrations..."
+npx prisma generate
 npx prisma migrate deploy
 
 if [ "${RUN_DB_SEED:-true}" = "true" ]; then

@@ -48,6 +48,12 @@ export class UpdateOltDeviceDto {
   snmpCommunity?: string | null;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  snmpPort?: number;
+
+  @IsOptional()
   @IsEnum(OltDeviceStatus)
   status?: OltDeviceStatus;
 

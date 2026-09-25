@@ -1,7 +1,18 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import {
+  CircleX,
+  LockKeyhole,
+  Pencil,
+  Trash2,
+  UnlockKeyhole,
+} from "lucide-react";
 import { Modal } from "@/components/ui/modal";
+import {
+  ActionDropdown,
+  type ActionDropdownItem,
+} from "@/components/ui/action-dropdown";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   createBillingCycle,
@@ -47,6 +58,61 @@ const emptyForm: CycleForm = {
 
 function titleCase(value: string) {
   return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function cycleActionItems(
+  cycle: BillingCycle,
+  handlers: {
+    openEdit: (cycle: BillingCycle) => void;
+    quickStatus: (cycle: BillingCycle, status: BillingCycleStatus) => void;
+    deleteCycle: (cycle: BillingCycle) => void;
+  },
+): ActionDropdownItem[] {
+  const items: ActionDropdownItem[] = [];
+
+  if (cycle.status === "draft") {
+    items.push({
+      label: "Open",
+      icon: UnlockKeyhole,
+      tone: "success",
+      onClick: () => handlers.quickStatus(cycle, "open"),
+    });
+  }
+
+  if (cycle.status === "open") {
+    items.push({
+      label: "Close",
+      icon: LockKeyhole,
+      tone: "info",
+      onClick: () => handlers.quickStatus(cycle, "closed"),
+    });
+  }
+
+  if (cycle.status !== "closed" && cycle.status !== "cancelled") {
+    items.push({
+      label: "Cancel",
+      icon: CircleX,
+      tone: "warning",
+      onClick: () => handlers.quickStatus(cycle, "cancelled"),
+    });
+  }
+
+  items.push({
+    label: "Edit",
+    icon: Pencil,
+    tone: "default",
+    onClick: () => handlers.openEdit(cycle),
+  });
+
+  items.push({
+    label: "Delete",
+    icon: Trash2,
+    tone: "destructive",
+    variant: "destructive",
+    onClick: () => handlers.deleteCycle(cycle),
+  });
+
+  return items;
 }
 
 function toPayload(form: CycleForm) {
@@ -137,6 +203,32 @@ export default function BillingCyclesPage() {
       setSaving(false);
     }
   }
+
+  async function handleDelete(cycle: BillingCycle) {
+    if (!window.confirm(`Delete ${cycle.name}?`)) return;
+
+    setSaving(true);
+    setMessage("");
+    setLocalError("");
+
+    try {
+      await deleteBillingCycle(cycle.id);
+      setMessage("Billing cycle deleted.");
+      await reload();
+    } catch (caught) {
+      setLocalError(
+        caught instanceof Error ? caught.message : "Unable to delete billing cycle",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const actionHandlers = {
+    openEdit,
+    quickStatus,
+    deleteCycle: handleDelete,
+  };
 
   return (
     <section className="flex flex-col gap-5">
@@ -240,57 +332,10 @@ export default function BillingCyclesPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      {cycle.status === "draft" ? (
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => quickStatus(cycle, "open")}
-                          className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          Open
-                        </button>
-                      ) : null}
-                      {cycle.status === "open" ? (
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => quickStatus(cycle, "closed")}
-                          className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          Close
-                        </button>
-                      ) : null}
-                      {cycle.status !== "closed" && cycle.status !== "cancelled" ? (
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => quickStatus(cycle, "cancelled")}
-                          className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          Cancel
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => openEdit(cycle)}
-                        className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!window.confirm(`Delete ${cycle.name}?`)) return;
-                          await deleteBillingCycle(cycle.id);
-                          setMessage("Billing cycle deleted.");
-                          await reload();
-                        }}
-                        className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                    <ActionDropdown
+                      disabled={saving}
+                      items={cycleActionItems(cycle, actionHandlers)}
+                    />
                   </td>
                 </tr>
               ))}

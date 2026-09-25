@@ -23,6 +23,16 @@ export type DashboardRevenuePoint = {
   uncollected: string;
 };
 
+export type DashboardTopBandwidthClient = {
+  rank: number;
+  username: string;
+  customerName: string;
+  barangay: string;
+  uploadBytes: string;
+  downloadBytes: string;
+  totalBytes: string;
+};
+
 export type DashboardAnalytics = {
   billingCycle: {
     id: number;
@@ -31,8 +41,20 @@ export type DashboardAnalytics = {
     periodEnd: string;
     dueDate: string;
     status: string;
-  };
+  } | null;
   metrics: DashboardMetrics;
+  onlinePppoeSummary: {
+    totalOnline: number;
+    routers: Array<{
+      id: number;
+      name: string;
+      host: string;
+      onlineCount: number;
+      lastRefreshedAt: string | null;
+    }>;
+    generatedAt: string;
+  };
+  topBandwidthClients: DashboardTopBandwidthClient[];
   revenueSeries: DashboardRevenuePoint[];
   generatedAt: string;
 };

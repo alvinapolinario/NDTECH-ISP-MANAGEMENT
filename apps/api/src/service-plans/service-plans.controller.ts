@@ -18,6 +18,11 @@ export class ServicePlansController {
     return this.servicePlansService.findAll(query);
   }
 
+  @Get('radius-profiles')
+  listRadiusProfiles() {
+    return this.servicePlansService.listRadiusProfiles();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.servicePlansService.findOne(Number(id));

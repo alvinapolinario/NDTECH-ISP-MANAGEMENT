@@ -3,7 +3,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InvoiceStatus, PaymentStatus, Prisma } from '@prisma/client';
+import {
+  InvoiceStatus,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client';
+import { InvoiceLedgerService } from '../billing/invoice-ledger.service';
 import { getPagination } from '../common/pagination';
 import { resolveStaffAssignment, STAFF_ROLES } from '../common/staff-role';
 import { PppoeAccountsService } from '../mikrotik/pppoe-accounts.service';
@@ -17,55 +23,159 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pppoeAccountsService: PppoeAccountsService,
+    private readonly invoiceLedger: InvoiceLedgerService,
   ) {}
 
   async create(dto: CreatePaymentDto) {
-    const invoice = await this.prisma.invoice.findFirst({
-      where: { id: dto.invoiceId, deletedAt: null },
-    });
-
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    if (invoice.status === InvoiceStatus.cancelled) {
-      throw new BadRequestException('Cannot post payment to a cancelled invoice');
-    }
-
-    if (Number(dto.amount) > Number(invoice.balance)) {
-      throw new BadRequestException('Payment amount cannot exceed invoice balance');
-    }
-
     const collectorAssignment = await resolveStaffAssignment(
       this.prisma,
       dto.collectorUserId,
       STAFF_ROLES.COLLECTOR,
     );
 
-    const payment = await this.prisma.payment.create({
-      data: {
-        paymentNumber: await this.nextPaymentNumber(),
-        invoiceId: invoice.id,
-        customerId: invoice.customerId,
-        amount: dto.amount,
-        paymentDate: new Date(dto.paymentDate),
-        paymentMethod: dto.paymentMethod,
-        referenceNumber: dto.referenceNumber,
-        receivedBy:
-          collectorAssignment === undefined
-            ? dto.receivedBy
-            : collectorAssignment.name,
-        collectorUserId:
-          collectorAssignment === undefined
-            ? dto.collectorUserId
-            : collectorAssignment.userId,
-        notes: dto.notes,
-      },
-      include: this.includeRelations(),
+    if (
+      dto.paymentMethod === PaymentMethod.cash &&
+      !(collectorAssignment?.userId ?? dto.collectorUserId)
+    ) {
+      throw new BadRequestException('Cash payments require a collector');
+    }
+
+    const payment = await this.prisma.$transaction(async (tx) => {
+      await this.invoiceLedger.lockInvoice(tx, dto.invoiceId);
+
+      const invoice = await tx.invoice.findFirst({
+        where: { id: dto.invoiceId, deletedAt: null },
+      });
+
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found');
+      }
+
+      if (invoice.status === InvoiceStatus.cancelled) {
+        throw new BadRequestException(
+          'Cannot post payment to a cancelled invoice',
+        );
+      }
+
+      const ledger = await this.invoiceLedger.recalculate(invoice.id, {
+        client: tx,
+      });
+      const balance = ledger?.balance ?? invoice.balance;
+
+      if (Number(dto.amount) > Number(balance)) {
+        throw new BadRequestException(
+          'Payment amount cannot exceed invoice balance',
+        );
+      }
+
+      const created = await tx.payment.create({
+        data: {
+          paymentNumber: await this.nextPaymentNumber(tx),
+          invoiceId: invoice.id,
+          customerId: invoice.customerId,
+          amount: dto.amount,
+          paymentDate: new Date(dto.paymentDate),
+          paymentMethod: dto.paymentMethod,
+          referenceNumber: dto.referenceNumber,
+          receivedBy:
+            collectorAssignment === undefined
+              ? dto.receivedBy
+              : collectorAssignment.name,
+          collectorUserId:
+            collectorAssignment === undefined
+              ? dto.collectorUserId
+              : collectorAssignment.userId,
+          notes: dto.notes,
+        },
+      });
+
+      const after = await this.invoiceLedger.recalculate(invoice.id, {
+        client: tx,
+      });
+
+      return { created, after };
     });
 
-    await this.recalculateInvoice(invoice.id, payment.id);
-    return payment;
+    if (
+      payment.after?.status === InvoiceStatus.paid &&
+      payment.after.previousStatus !== InvoiceStatus.paid
+    ) {
+      await this.pppoeAccountsService.restoreAfterPayment(
+        payment.created.invoiceId,
+        payment.created.id,
+      );
+    }
+
+    return this.findOne(payment.created.id);
+  }
+
+  async createFromGateway(params: {
+    invoiceId: number;
+    amount: number;
+    paymentMethod: PaymentMethod;
+    referenceNumber: string;
+    notes?: string;
+  }) {
+    const payment = await this.prisma.$transaction(async (tx) => {
+      await this.invoiceLedger.lockInvoice(tx, params.invoiceId);
+
+      const invoice = await tx.invoice.findFirst({
+        where: { id: params.invoiceId, deletedAt: null },
+      });
+
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found');
+      }
+
+      if (invoice.status === InvoiceStatus.cancelled) {
+        throw new BadRequestException(
+          'Cannot post payment to a cancelled invoice',
+        );
+      }
+
+      const ledger = await this.invoiceLedger.recalculate(invoice.id, {
+        client: tx,
+      });
+      const balance = ledger?.balance ?? invoice.balance;
+
+      if (params.amount > Number(balance)) {
+        throw new BadRequestException(
+          'Payment amount cannot exceed invoice balance',
+        );
+      }
+
+      const created = await tx.payment.create({
+        data: {
+          paymentNumber: await this.nextPaymentNumber(tx),
+          invoiceId: invoice.id,
+          customerId: invoice.customerId,
+          amount: params.amount,
+          paymentDate: new Date(),
+          paymentMethod: params.paymentMethod,
+          referenceNumber: params.referenceNumber,
+          receivedBy: 'Online payment gateway',
+          notes: params.notes,
+        },
+      });
+
+      const after = await this.invoiceLedger.recalculate(invoice.id, {
+        client: tx,
+      });
+
+      return { created, after };
+    });
+
+    if (
+      payment.after?.status === InvoiceStatus.paid &&
+      payment.after.previousStatus !== InvoiceStatus.paid
+    ) {
+      await this.pppoeAccountsService.restoreAfterPayment(
+        payment.created.invoiceId,
+        payment.created.id,
+      );
+    }
+
+    return this.findOne(payment.created.id);
   }
 
   async findAll(query: ListPaymentsQueryDto) {
@@ -136,25 +246,18 @@ export class PaymentsService {
 
   async update(id: number, dto: UpdatePaymentDto) {
     const current = await this.findOne(id);
-    const invoice = await this.prisma.invoice.findFirst({
-      where: { id: current.invoiceId, deletedAt: null },
-    });
 
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    if (invoice.status === InvoiceStatus.cancelled && dto.status !== PaymentStatus.voided) {
-      throw new BadRequestException('Cannot update payment for a cancelled invoice');
-    }
-
-    if (dto.amount !== undefined && dto.status !== PaymentStatus.voided) {
-      const postedTotal = await this.postedTotalForInvoice(
-        current.invoiceId,
-        current.id,
-      );
-      if (Number(postedTotal) + Number(dto.amount) > Number(invoice.total)) {
-        throw new BadRequestException('Payment amount cannot exceed invoice balance');
+    if (
+      dto.paymentMethod === PaymentMethod.cash ||
+      (dto.paymentMethod === undefined &&
+        current.paymentMethod === PaymentMethod.cash)
+    ) {
+      const nextCollectorId =
+        dto.collectorUserId !== undefined
+          ? dto.collectorUserId
+          : current.collectorUserId;
+      if (!nextCollectorId) {
+        throw new BadRequestException('Cash payments require a collector');
       }
     }
 
@@ -164,27 +267,79 @@ export class PaymentsService {
       STAFF_ROLES.COLLECTOR,
     );
 
-    const updated = await this.prisma.payment.update({
-      where: { id },
-      data: {
-        amount: dto.amount,
-        paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : undefined,
-        paymentMethod: dto.paymentMethod,
-        status: dto.status,
-        referenceNumber: dto.referenceNumber,
-        ...(collectorAssignment !== undefined
-          ? {
-              collectorUserId: collectorAssignment.userId,
-              receivedBy: collectorAssignment.name,
-            }
-          : { receivedBy: dto.receivedBy }),
-        notes: dto.notes,
-      },
-      include: this.includeRelations(),
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.invoiceLedger.lockInvoice(tx, current.invoiceId);
+
+      const invoice = await tx.invoice.findFirst({
+        where: { id: current.invoiceId, deletedAt: null },
+      });
+
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found');
+      }
+
+      if (
+        invoice.status === InvoiceStatus.cancelled &&
+        dto.status !== PaymentStatus.voided
+      ) {
+        throw new BadRequestException(
+          'Cannot update payment for a cancelled invoice',
+        );
+      }
+
+      if (dto.amount !== undefined && dto.status !== PaymentStatus.voided) {
+        const postedTotal = await this.invoiceLedger.sumPostedPayments(
+          tx,
+          current.invoiceId,
+          current.id,
+        );
+        const ledger = await this.invoiceLedger.recalculate(current.invoiceId, {
+          client: tx,
+        });
+        const maxTotal = ledger?.total ?? invoice.total;
+        if (Number(postedTotal) + Number(dto.amount) > Number(maxTotal)) {
+          throw new BadRequestException(
+            'Payment amount cannot exceed invoice total after adjustments',
+          );
+        }
+      }
+
+      const row = await tx.payment.update({
+        where: { id },
+        data: {
+          amount: dto.amount,
+          paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : undefined,
+          paymentMethod: dto.paymentMethod,
+          status: dto.status,
+          referenceNumber: dto.referenceNumber,
+          ...(collectorAssignment !== undefined
+            ? {
+                collectorUserId: collectorAssignment.userId,
+                receivedBy: collectorAssignment.name,
+              }
+            : { receivedBy: dto.receivedBy }),
+          notes: dto.notes,
+        },
+      });
+
+      const after = await this.invoiceLedger.recalculate(current.invoiceId, {
+        client: tx,
+      });
+
+      return { row, after };
     });
 
-    await this.recalculateInvoice(current.invoiceId);
-    return updated;
+    if (
+      updated.after?.status === InvoiceStatus.paid &&
+      updated.after.previousStatus !== InvoiceStatus.paid
+    ) {
+      await this.pppoeAccountsService.restoreAfterPayment(
+        current.invoiceId,
+        updated.row.id,
+      );
+    }
+
+    return this.findOne(updated.row.id);
   }
 
   async void(id: number) {
@@ -195,80 +350,40 @@ export class PaymentsService {
   async remove(id: number) {
     const current = await this.findOne(id);
 
-    const deleted = await this.prisma.payment.update({
-      where: { id },
-      data: {
-        status: PaymentStatus.voided,
-        deletedAt: new Date(),
-      },
-      include: this.includeRelations(),
+    return this.prisma.$transaction(async (tx) => {
+      await this.invoiceLedger.lockInvoice(tx, current.invoiceId);
+      const row = await tx.payment.update({
+        where: { id },
+        data: {
+          status: PaymentStatus.voided,
+          deletedAt: new Date(),
+        },
+        include: this.includeRelations(),
+      });
+      await this.invoiceLedger.recalculate(current.invoiceId, { client: tx });
+      return row;
     });
-
-    await this.recalculateInvoice(current.invoiceId);
-    return deleted;
   }
 
-  private async postedTotalForInvoice(invoiceId: number, excludePaymentId?: number) {
-    const aggregate = await this.prisma.payment.aggregate({
-      where: {
-        invoiceId,
-        status: PaymentStatus.posted,
-        deletedAt: null,
-        ...(excludePaymentId ? { id: { not: excludePaymentId } } : {}),
-      },
-      _sum: { amount: true },
-    });
-
-    return aggregate._sum.amount ?? new Prisma.Decimal(0);
-  }
-
-  private async recalculateInvoice(invoiceId: number, paymentId?: number) {
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id: invoiceId },
-    });
-
-    if (!invoice) return;
-
-    const previousStatus = invoice.status;
-    const amountPaid = await this.postedTotalForInvoice(invoiceId);
-    const balance = Prisma.Decimal.max(
-      new Prisma.Decimal(0),
-      invoice.total.minus(amountPaid),
-    );
-    const status =
-      balance.equals(0) && amountPaid.greaterThan(0)
-        ? InvoiceStatus.paid
-        : amountPaid.greaterThan(0)
-          ? InvoiceStatus.partially_paid
-          : invoice.status === InvoiceStatus.draft
-            ? InvoiceStatus.draft
-            : InvoiceStatus.issued;
-
-    await this.prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        amountPaid,
-        balance,
-        status,
-      },
-    });
-
-    if (
-      status === InvoiceStatus.paid &&
-      previousStatus !== InvoiceStatus.paid
-    ) {
-      await this.pppoeAccountsService.restoreAfterPayment(invoiceId, paymentId);
-    }
-  }
-
-  private async nextPaymentNumber() {
+  private async nextPaymentNumber(client: Prisma.TransactionClient | PrismaService) {
     const now = new Date();
     const prefix = `PAY-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const count = await this.prisma.payment.count({
-      where: { paymentNumber: { startsWith: prefix } },
-    });
 
-    return `${prefix}-${String(count + 1).padStart(4, '0')}`;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const count = await client.payment.count({
+        where: { paymentNumber: { startsWith: prefix } },
+      });
+      const candidate = `${prefix}-${String(count + 1 + attempt).padStart(4, '0')}`;
+      const exists = await client.payment.findUnique({
+        where: { paymentNumber: candidate },
+        select: { id: true },
+      });
+      if (!exists) {
+        return candidate;
+      }
+    }
+
+    return `${prefix}-${Date.now()}`;
   }
 
   private includeRelations() {

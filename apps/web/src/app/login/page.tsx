@@ -1,12 +1,25 @@
 "use client";
 
 import { FormEvent, Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { loginRequest } from "@/lib/api";
+import { BASE_PATH, withBasePath } from "@/lib/base-path";
 import { storeAuthSession } from "@/lib/auth-user";
 
+function normalizeNextPath(next: string | null) {
+  if (!next || !next.startsWith("/")) {
+    return "/";
+  }
+
+  if (BASE_PATH && (next === BASE_PATH || next.startsWith(`${BASE_PATH}/`))) {
+    const stripped = next.slice(BASE_PATH.length);
+    return stripped.startsWith("/") ? stripped : `/${stripped}`;
+  }
+
+  return next;
+}
+
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,12 +38,11 @@ function LoginForm() {
         user: session.user,
       });
 
-      const next = searchParams.get("next");
-      router.replace(next && next.startsWith("/") ? next : "/");
-      router.refresh();
+      const next = normalizeNextPath(searchParams.get("next"));
+      // Hard navigation so middleware sees the auth cookie on the next request.
+      window.location.assign(withBasePath(next));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to sign in");
-    } finally {
       setLoading(false);
     }
   }
@@ -60,7 +72,7 @@ function LoginForm() {
               autoComplete="username"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="admin@ndtech.local"
+              placeholder="you@company.com"
               className="rounded-md border border-slate-200 px-3 py-2 outline-none focus:border-emerald-500"
             />
           </label>
@@ -91,10 +103,6 @@ function LoginForm() {
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
-
-        <p className="mt-6 text-center text-xs text-slate-500">
-          Default seed account: admin@ndtech.local / Admin@12345
-        </p>
       </div>
     </div>
   );

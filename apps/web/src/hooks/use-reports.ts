@@ -8,6 +8,9 @@ export type ReportQuery = {
   limit?: number;
   month?: string;
   year?: string;
+  from?: string;
+  to?: string;
+  collectorUserId?: number | "";
 };
 
 function buildQuery(params: ReportQuery = {}) {
@@ -19,6 +22,11 @@ function buildQuery(params: ReportQuery = {}) {
   if (params.filter) query.set("filter", params.filter);
   if (params.month) query.set("month", params.month);
   if (params.year) query.set("year", params.year);
+  if (params.from) query.set("from", params.from);
+  if (params.to) query.set("to", params.to);
+  if (params.collectorUserId) {
+    query.set("collectorUserId", String(params.collectorUserId));
+  }
   return query.toString();
 }
 
@@ -38,6 +46,14 @@ export function fetchCollectionReport(params?: ReportQuery) {
   return apiRequest<ReportResponse<Record<string, unknown>>>(
     `/reports/collections?${buildQuery(params)}`,
   );
+}
+
+export function fetchCollectionByCollectorReport(params?: ReportQuery) {
+  return apiRequest<
+    ReportResponse<Record<string, unknown>> & {
+      period?: { from: string; to: string };
+    }
+  >(`/reports/collections/by-collector?${buildQuery(params)}`);
 }
 
 export function fetchReferralReport(params?: ReportQuery) {
