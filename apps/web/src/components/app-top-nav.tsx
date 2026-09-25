@@ -118,7 +118,9 @@ export function AppTopNav() {
             </button>
 
             <div className="relative ml-1" ref={menuRef}>
-              {ready && user ? (
+              {!ready ? (
+                <div className="px-2 text-sm text-slate-400">Loading...</div>
+              ) : user ? (
                 <>
                   <button
                     type="button"
@@ -176,9 +178,7 @@ export function AppTopNav() {
                     </div>
                   ) : null}
                 </>
-              ) : (
-                <div className="px-2 text-sm text-slate-400">Loading...</div>
-              )}
+              ) : null}
             </div>
           </div>
         </div>

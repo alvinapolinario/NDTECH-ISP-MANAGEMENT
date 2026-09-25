@@ -7,6 +7,8 @@ import type {
   MikrotikRouter,
   PppoeAccount,
   PppoeSession,
+  PppoeOnlineSummary,
+  PppoeSessionMonitoring,
 } from "@/types/mikrotik";
 
 export async function fetchMikrotikRouters(params: {
@@ -155,6 +157,16 @@ export async function runPppoeAction(
   return apiRequest<PppoeAccount>(`/pppoe-accounts/${id}/${action}`, {
     method: "POST",
   });
+}
+
+export async function fetchPppoeSessionSummary() {
+  return apiRequest<PppoeOnlineSummary>("/pppoe-sessions/summary");
+}
+
+export async function fetchPppoeSessionMonitoring(routerId: number) {
+  return apiRequest<PppoeSessionMonitoring>(
+    `/pppoe-sessions/monitoring?routerId=${routerId}`,
+  );
 }
 
 export async function fetchPppoeSessions(params: {

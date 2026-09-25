@@ -9,6 +9,10 @@ import { MikrotikRouterAccessService } from './mikrotik-router-access.service';
 import { CreateMikrotikRouterDto } from './dto/create-mikrotik-router.dto';
 import { UpdateMikrotikRouterDto } from './dto/update-mikrotik-router.dto';
 import { MikrotikCommandLoggerService } from './mikrotik-command-logger.service';
+import {
+  formatMikrotikRouterError,
+  toMikrotikRouterException,
+} from './mikrotik-router-error.util';
 
 @Injectable()
 export class MikrotikRoutersService {
@@ -116,7 +120,7 @@ export class MikrotikRoutersService {
       commandPayload: { host: router.host, apiPort: router.apiPort },
       responseMessage: result.message,
       status: result.ok
-        ? MikrotikCommandStatus.mock_logged
+        ? this.commandStatus()
         : MikrotikCommandStatus.failed,
     });
 
@@ -132,21 +136,52 @@ export class MikrotikRoutersService {
     await this.findOne(id);
     const router = await this.routerAccess.getRouterWithSecret(id);
     const client = this.clientFactory.create(router);
-    const profiles = await client.listPppoeProfiles();
 
-    return { items: profiles };
+    try {
+      const profiles = await client.listPppoeProfiles();
+      return { items: profiles };
+    } catch (error) {
+      throw toMikrotikRouterException(
+        error,
+        'list PPP profiles',
+        router.host,
+        router.apiPort,
+      );
+    }
   }
 
   async syncPppoeAccounts(id: number) {
     const router = await this.routerAccess.getRouterWithSecret(id);
     const client = this.clientFactory.create(router);
-    const secrets = await client.listPppoeSecrets();
+
+    let secrets;
+    try {
+      secrets = await client.listPppoeSecrets();
+    } catch (error) {
+      const message = formatMikrotikRouterError(error);
+
+      await this.commandLogger.log({
+        routerId: id,
+        commandType: 'sync_pppoe_accounts',
+        commandPayload: { source: '/ppp/secret/print' },
+        responseMessage: message,
+        status: MikrotikCommandStatus.failed,
+      });
+
+      throw toMikrotikRouterException(
+        error,
+        'sync PPPoE accounts',
+        router.host,
+        router.apiPort,
+      );
+    }
 
     await this.commandLogger.log({
       routerId: id,
       commandType: 'sync_pppoe_accounts',
       commandPayload: { count: secrets.length },
       responseMessage: `Fetched ${secrets.length} PPPoE secrets from router`,
+      status: this.commandStatus(),
     });
 
     let updated = 0;
@@ -244,5 +279,11 @@ export class MikrotikRoutersService {
         },
       },
     };
+  }
+
+  private commandStatus() {
+    return process.env.MIKROTIK_USE_MOCK !== 'false'
+      ? MikrotikCommandStatus.mock_logged
+      : MikrotikCommandStatus.executed;
   }
 }

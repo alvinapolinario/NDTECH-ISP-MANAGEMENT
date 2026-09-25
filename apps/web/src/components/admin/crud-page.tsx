@@ -69,6 +69,9 @@ type CrudPageProps<T extends Entity> = {
   initialFilter?: string;
   formMode?: "inline" | "modal";
   openFormOnMount?: boolean;
+  seedCreateForm?: Record<string, unknown> | null;
+  onSeedCreateFormConsumed?: () => void;
+  onSaved?: () => void;
   onEditingChange?: (item: T | null) => void;
 };
 
@@ -95,6 +98,9 @@ export function CrudPage<T extends Entity>({
   initialFilter = "",
   formMode = "inline",
   openFormOnMount = false,
+  seedCreateForm = null,
+  onSeedCreateFormConsumed,
+  onSaved,
   onEditingChange,
 }: CrudPageProps<T>) {
   const [data, setData] = useState<ListResponse<T>>(emptyList);
@@ -153,6 +159,19 @@ export function CrudPage<T extends Entity>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openFormOnMount, canCreate]);
 
+  useEffect(() => {
+    if (!seedCreateForm || !canCreate) return;
+
+    setEditing(null);
+    onEditingChange?.(null);
+    setForm({ ...initialForm, ...seedCreateForm });
+    setMessage("");
+    setError("");
+    setFormOpen(true);
+    onSeedCreateFormConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedCreateForm, canCreate]);
+
   function closeForm() {
     setFormOpen(false);
     setEditing(null);
@@ -209,6 +228,7 @@ export function CrudPage<T extends Entity>({
 
       closeForm();
       await load();
+      onSaved?.();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to save");
     } finally {
@@ -228,6 +248,7 @@ export function CrudPage<T extends Entity>({
       await apiRequest(`${endpoint}/${item.id}`, { method: "DELETE" });
       setMessage(`${title} deleted.`);
       await load();
+      onSaved?.();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to delete");
     } finally {

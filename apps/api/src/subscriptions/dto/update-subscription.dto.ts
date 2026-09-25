@@ -5,9 +5,13 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
+  IsString,
   Max,
+  MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpdateSubscriptionDto {
@@ -25,6 +29,23 @@ export class UpdateSubscriptionDto {
   @Type(() => Number)
   @IsInt()
   pppoeAccountId?: number | null;
+
+  @IsOptional()
+  @IsString()
+  radiusUsername?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  label?: string | null;
+
+  /** Negotiated monthly fee; null clears override and returns to plan catalog price. */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  monthlyAmount?: number | null;
 
   @IsOptional()
   @Type(() => Number)

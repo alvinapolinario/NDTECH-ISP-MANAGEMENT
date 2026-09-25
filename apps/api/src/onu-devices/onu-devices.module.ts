@@ -8,5 +8,6 @@ import { OnuDevicesSnmpService } from './onu-devices-snmp.service';
   imports: [OltDevicesModule],
   controllers: [OnuDevicesController],
   providers: [OnuDevicesService, OnuDevicesSnmpService],
+  exports: [OnuDevicesService],
 })
 export class OnuDevicesModule {}

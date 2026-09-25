@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { StatusBadge } from "@/components/network/status-badge";
 import { Modal } from "@/components/ui/modal";
+import { OnuTr069Panel } from "@/components/network/onu-tr069-panel";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { fetchCustomers } from "@/hooks/use-customers";
 import { fetchOltDevices } from "@/hooks/use-olt-devices";
@@ -210,11 +211,12 @@ export default function OnuDevicesPage() {
       if (editing) {
         await updateOnuDevice(editing.id, toPayload(form));
         setMessage("ONU device updated.");
+        setFormOpen(false);
       } else {
-        await createOnuDevice(toPayload(form));
-        setMessage("ONU device created.");
+        const created = await createOnuDevice(toPayload(form));
+        setEditing(created);
+        setMessage("ONU device created. TR-069 remote actions are now available below.");
       }
-      setFormOpen(false);
       await reload();
     } catch (caught) {
       setLocalError(caught instanceof Error ? caught.message : "Unable to save ONU device");
@@ -727,6 +729,18 @@ export default function OnuDevicesPage() {
             />
           </label>
         </form>
+        {editing ? (
+          <div className="mt-4 border-t border-slate-200 pt-4">
+            <OnuTr069Panel
+              onuDeviceId={editing.id}
+              serialNumber={form.serialNumber || editing.serialNumber}
+            />
+          </div>
+        ) : (
+          <div className="mt-4 border-t border-slate-200 pt-4">
+            <OnuTr069Panel serialNumber={form.serialNumber} />
+          </div>
+        )}
       </Modal>
     </section>
   );

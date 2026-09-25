@@ -8,6 +8,8 @@ import { BearerAuthGuard } from './auth/bearer-auth.guard';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { InvoiceLedgerModule } from './billing/invoice-ledger.module';
+import { RolesGuard } from './common/roles.guard';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -18,6 +20,7 @@ import { LocationsModule } from './locations/locations.module';
 import { ServicePlansModule } from './service-plans/service-plans.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { MikrotikModule } from './mikrotik/mikrotik.module';
+import { RadiusModule } from './radius/radius.module';
 import { InstallationRequestsModule } from './installation-requests/installation-requests.module';
 import { BillingCyclesModule } from './billing-cycles/billing-cycles.module';
 import { InvoicesModule } from './invoices/invoices.module';
@@ -51,8 +54,11 @@ import { ExpenseCategoriesModule } from './expense-categories/expense-categories
 import { ExpensesModule } from './expenses/expenses.module';
 import { CollectorSyncModule } from './collector-sync/collector-sync.module';
 import { IntegrationSettingsModule } from './integration-settings/integration-settings.module';
+import { PaymentGatewaysModule } from './payment-gateways/payment-gateways.module';
 import { SmsModule } from './sms/sms.module';
+import { CollectorRemittancesModule } from './collector-remittances/collector-remittances.module';
 import { SwitchDevicesModule } from './switch-devices/switch-devices.module';
+import { Tr069Module } from './tr069/tr069.module';
 import { NetworkSnmpSchedulerModule } from './snmp/network-snmp-scheduler.module';
 
 @Module({
@@ -65,6 +71,7 @@ import { NetworkSnmpSchedulerModule } from './snmp/network-snmp-scheduler.module
       isGlobal: true,
     }),
     PrismaModule,
+    InvoiceLedgerModule,
     AuthModule,
     UsersModule,
     RolesModule,
@@ -78,6 +85,7 @@ import { NetworkSnmpSchedulerModule } from './snmp/network-snmp-scheduler.module
     ServicePlansModule,
     SubscriptionsModule,
     MikrotikModule,
+    RadiusModule,
     InstallationRequestsModule,
     BillingCyclesModule,
     InvoicesModule,
@@ -86,6 +94,7 @@ import { NetworkSnmpSchedulerModule } from './snmp/network-snmp-scheduler.module
     CollectionsModule,
     OltDevicesModule,
     OnuDevicesModule,
+    Tr069Module,
     SwitchDevicesModule,
     NetworkSnmpSchedulerModule,
     NetworkMonitoringModule,
@@ -113,7 +122,9 @@ import { NetworkSnmpSchedulerModule } from './snmp/network-snmp-scheduler.module
     ExpensesModule,
     CollectorSyncModule,
     IntegrationSettingsModule,
+    PaymentGatewaysModule,
     SmsModule,
+    CollectorRemittancesModule,
   ],
   controllers: [AppController],
   providers: [

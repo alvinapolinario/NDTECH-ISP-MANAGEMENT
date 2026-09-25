@@ -4,6 +4,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "NDTECH ISP Billing",
   description: "ISP billing and operations management system.",
+  icons: {
+    icon: [{ url: "/icon.png", type: "image/png" }],
+    apple: [{ url: "/apple-icon.png", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({

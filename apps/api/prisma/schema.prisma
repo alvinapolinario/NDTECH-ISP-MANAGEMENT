@@ -260,6 +260,26 @@ enum PaymentStatus {
   voided
 }
 
+enum CollectorRemittanceStatus {
+  recorded
+  voided
+}
+
+enum PaymentGatewayProvider {
+  paymongo
+  stripe
+  gcash
+  maya
+}
+
+enum PaymentGatewayTransactionStatus {
+  pending
+  paid
+  failed
+  expired
+  cancelled
+}
+
 enum ExpenseStatus {
   recorded
   voided
@@ -405,6 +425,9 @@ model User {
   apiAccessTokens     ApiAccessToken[]
   sentSmsMessages     SmsMessage[]
   integrationSettings IntegrationSetting[] @relation("IntegrationSettingUpdatedBy")
+
+  collectorRemittances CollectorRemittance[] @relation("CollectorRemittanceCollector")
+  receivedRemittances  CollectorRemittance[] @relation("CollectorRemittanceReceivedBy")
 
   @@map("users")
 }
@@ -567,6 +590,7 @@ model Customer {
   installationRequests InstallationRequest[]
   invoices             Invoice[]
   payments             Payment[]
+  paymentGatewayTransactions PaymentGatewayTransaction[]
   billingAdjustments   BillingAdjustment[]
   collectionCases      CollectionCase[]
   tickets              Ticket[]
@@ -716,6 +740,8 @@ model Subscription {
   customerId         Int                @map("customer_id")
   servicePlanId      Int                @map("service_plan_id")
   pppoeAccountId     Int?               @map("pppoe_account_id")
+  label              String?
+  monthlyAmount      Decimal?           @map("monthly_amount") @db.Decimal(10, 2)
   billingDay         Int                @map("billing_day")
   startDate          DateTime           @map("start_date") @db.Date
   endDate            DateTime?          @map("end_date") @db.Date
@@ -758,6 +784,7 @@ model Invoice {
   assignedFinanceUser   User?         @relation("InvoiceFinanceReviewer", fields: [assignedFinanceUserId], references: [id])
   items          InvoiceItem[]
   payments       Payment[]
+  paymentGatewayTransactions PaymentGatewayTransaction[]
   adjustments    BillingAdjustment[]
   collectionCase CollectionCase?
   pppoeAccountActions PppoeAccountActionLog[]
@@ -804,8 +831,63 @@ model Payment {
   collector       User?         @relation("PaymentCollector", fields: [collectorUserId], references: [id])
   pppoeAccountActions PppoeAccountActionLog[]
   collectorMobileEvents CollectorMobileEvent[]
+  gatewayTransaction PaymentGatewayTransaction?
 
   @@map("payments")
+}
+
+model CollectorRemittance {
+  id                 Int                       @id @default(autoincrement())
+  remittanceNumber   String                    @unique @map("remittance_number")
+  collectorUserId    Int                       @map("collector_user_id")
+  receivedByUserId   Int                       @map("received_by_user_id")
+  periodStart        DateTime                  @map("period_start") @db.Date
+  periodEnd          DateTime                  @map("period_end") @db.Date
+  expectedAmount     Decimal                   @map("expected_amount") @db.Decimal(10, 2)
+  cashReceivedAmount Decimal                   @map("cash_received_amount") @db.Decimal(10, 2)
+  variance           Decimal                   @db.Decimal(10, 2)
+  notes              String?                   @db.Text
+  status             CollectorRemittanceStatus @default(recorded)
+  remittanceDate     DateTime                  @map("remittance_date") @db.Date
+  createdAt          DateTime                  @default(now()) @map("created_at")
+  updatedAt          DateTime                  @updatedAt @map("updated_at")
+  collector          User                      @relation("CollectorRemittanceCollector", fields: [collectorUserId], references: [id])
+  receivedBy         User                      @relation("CollectorRemittanceReceivedBy", fields: [receivedByUserId], references: [id])
+
+  @@index([collectorUserId])
+  @@index([remittanceDate])
+  @@index([status])
+  @@map("collector_remittances")
+}
+
+
+model PaymentGatewayTransaction {
+  id             Int                             @id @default(autoincrement())
+  provider       PaymentGatewayProvider
+  externalId     String                          @map("external_id")
+  idempotencyKey String?                         @unique @map("idempotency_key")
+  invoiceId      Int                             @map("invoice_id")
+  customerId     Int                             @map("customer_id")
+  amount         Decimal                         @db.Decimal(10, 2)
+  currency       String                          @default("PHP")
+  status         PaymentGatewayTransactionStatus @default(pending)
+  checkoutUrl    String?                         @map("checkout_url") @db.Text
+  paymentId      Int?                            @unique @map("payment_id")
+  channel        String?
+  metadata       Json?
+  webhookEvents  Json?                           @map("webhook_events")
+  expiresAt      DateTime?                       @map("expires_at")
+  paidAt         DateTime?                       @map("paid_at")
+  createdAt      DateTime                        @default(now()) @map("created_at")
+  updatedAt      DateTime                        @updatedAt @map("updated_at")
+  invoice        Invoice                         @relation(fields: [invoiceId], references: [id])
+  customer       Customer                        @relation(fields: [customerId], references: [id])
+  payment        Payment?                        @relation(fields: [paymentId], references: [id])
+
+  @@unique([provider, externalId])
+  @@index([invoiceId])
+  @@index([status])
+  @@map("payment_gateway_transactions")
 }
 
 model BillingAdjustment {
