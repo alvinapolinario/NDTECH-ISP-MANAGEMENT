@@ -1,7 +1,9 @@
 import { clearAuthSession, getAccessToken, getStoredAuthUser } from "@/lib/auth-user";
+import { ApiRequestError, readApiErrorMessage } from "@/lib/api-errors";
+import { withBasePath } from "@/lib/base-path";
 
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+  process.env.NEXT_PUBLIC_API_URL ?? withBasePath("/backend");
 
 function getAuthHeaders() {
   const headers: Record<string, string> = {};
@@ -20,11 +22,20 @@ function getAuthHeaders() {
   return headers;
 }
 
+function normalizeApiPath(path: string) {
+  const [pathname, ...queryParts] = path.split("?");
+  const query = queryParts.join("?");
+  const normalizedPathname = pathname.replace(/\/+$/, "") || "/";
+  return query ? `${normalizedPathname}?${query}` : normalizedPathname;
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const apiPath = normalizeApiPath(path);
+
+  const response = await fetch(`${API_BASE_URL}${apiPath}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -37,13 +48,13 @@ export async function apiRequest<T>(
   if (response.status === 401 && typeof window !== "undefined") {
     clearAuthSession();
     const next = encodeURIComponent(window.location.pathname);
-    window.location.href = `/login?next=${next}`;
+    window.location.href = withBasePath(`/login?next=${next}`);
     throw new Error("Session expired. Please sign in again.");
   }
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed with ${response.status}`);
+    const message = await readApiErrorMessage(response);
+    throw new ApiRequestError(message, response.status);
   }
 
   return response.json() as Promise<T>;
@@ -60,18 +71,8 @@ export async function loginRequest(email: string, password: string) {
   });
 
   if (!response.ok) {
-    let message = "Invalid email or password";
-    try {
-      const body = await response.json();
-      message = body.message ?? message;
-      if (Array.isArray(message)) {
-        message = message.join(", ");
-      }
-    } catch {
-      const text = await response.text();
-      if (text) message = text;
-    }
-    throw new Error(message);
+    const message = await readApiErrorMessage(response);
+    throw new ApiRequestError(message, response.status);
   }
 
   return response.json() as Promise<{

@@ -18,7 +18,13 @@ import {
   toCreateSubscriptionPayload,
   toUpdateSubscriptionPayload,
 } from "@/lib/subscription-payload";
-import { customerDisplayName, formatDate, formatMoney, toDateInputValue } from "@/lib/format";
+import {
+  customerDisplayName,
+  formatDate,
+  formatMoney,
+  subscriptionMonthlyFee,
+  toDateInputValue,
+} from "@/lib/format";
 import type { Subscription, SubscriptionFormValues, SubscriptionStatus } from "@/types/subscription";
 
 const statusOptions: Array<{ label: string; value: SubscriptionStatus | "" }> = [
@@ -74,6 +80,17 @@ function SubscriptionsPageContent() {
             pppoeAccountId: editing.pppoeAccountId
               ? String(editing.pppoeAccountId)
               : "",
+            radiusUsername:
+              editing.pppoeAccountId
+                ? ""
+                : (editing.pppoeAccount?.username ?? ""),
+            label: editing.label ?? "",
+            monthlyAmount:
+              editing.monthlyAmount !== null &&
+              editing.monthlyAmount !== undefined &&
+              editing.monthlyAmount !== ""
+                ? String(editing.monthlyAmount)
+                : "",
             billingDay: String(editing.billingDay),
             startDate: toDateInputValue(editing.startDate),
             endDate: toDateInputValue(editing.endDate),
@@ -251,6 +268,7 @@ function SubscriptionsPageContent() {
             <thead className="bg-emerald-950 text-white">
               <tr>
                 <th className="px-4 py-3 font-semibold">Customer</th>
+                <th className="px-4 py-3 font-semibold">Label</th>
                 <th className="px-4 py-3 font-semibold">Plan</th>
                 <th className="px-4 py-3 font-semibold">Monthly Fee</th>
                 <th className="px-4 py-3 font-semibold">PPPoE Account</th>
@@ -272,10 +290,20 @@ function SubscriptionsPageContent() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-slate-700">
+                    {subscription.label || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-slate-700">
                     {subscription.servicePlan.name}
                   </td>
                   <td className="px-4 py-3 text-slate-700">
-                    {formatMoney(subscription.servicePlan.monthlyPrice)}
+                    <div>{formatMoney(subscriptionMonthlyFee(subscription))}</div>
+                    {subscription.monthlyAmount !== null &&
+                    subscription.monthlyAmount !== undefined &&
+                    subscription.monthlyAmount !== "" ? (
+                      <div className="text-xs text-slate-500">
+                        Custom (plan {formatMoney(subscription.servicePlan.monthlyPrice)})
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-slate-700">
                     {subscription.pppoeAccount ? (
@@ -322,7 +350,7 @@ function SubscriptionsPageContent() {
               {!data.items.length ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-8 text-center text-sm text-slate-500"
                   >
                     {loading ? "Loading..." : "No subscriptions found."}
@@ -371,6 +399,7 @@ function SubscriptionsPageContent() {
         <SubscriptionForm
           key={editing?.id ?? "create"}
           embedded
+          excludeSubscriptionId={editing?.id}
           initialValues={editInitialValues}
           submitLabel={saving ? "Saving..." : editing ? "Save Changes" : "Create Subscription"}
           loading={saving}

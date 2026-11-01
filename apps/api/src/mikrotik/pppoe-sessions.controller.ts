@@ -6,6 +6,16 @@ import { PppoeSessionsService } from './pppoe-sessions.service';
 export class PppoeSessionsController {
   constructor(private readonly sessionsService: PppoeSessionsService) {}
 
+  @Get('summary')
+  getSummary() {
+    return this.sessionsService.getOnlineSummary();
+  }
+
+  @Get('monitoring')
+  getMonitoring(@Query('routerId') routerId: string) {
+    return this.sessionsService.getMonitoring(Number(routerId));
+  }
+
   @Get()
   findAll(@Query() query: ListPppoeSessionsQueryDto) {
     return this.sessionsService.findAll(query);

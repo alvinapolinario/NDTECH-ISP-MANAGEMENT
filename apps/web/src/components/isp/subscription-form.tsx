@@ -1,12 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useCustomers } from "@/hooks/use-customers";
 import { fetchPppoeAccounts } from "@/hooks/use-mikrotik";
+import { fetchPppoeAccountOptions } from "@/hooks/use-subscriptions";
 import { useServicePlans } from "@/hooks/use-service-plans";
-import { customerDisplayName } from "@/lib/format";
-import type { PppoeAccount } from "@/types/mikrotik";
+import { customerDisplayName, formatMoney } from "@/lib/format";
+import type { PppoeAccountOption } from "@/types/subscription";
 import type {
   SubscriptionFormValues,
   SubscriptionStatus,
@@ -17,6 +18,7 @@ type SubscriptionFormProps = {
   submitLabel: string;
   loading?: boolean;
   embedded?: boolean;
+  excludeSubscriptionId?: number;
   onSubmit: (values: SubscriptionFormValues) => Promise<void>;
   onCancel?: () => void;
 };
@@ -25,6 +27,9 @@ const defaultValues: SubscriptionFormValues = {
   customerId: "",
   servicePlanId: "",
   pppoeAccountId: "",
+  radiusUsername: "",
+  label: "",
+  monthlyAmount: "",
   billingDay: "1",
   startDate: new Date().toISOString().slice(0, 10),
   endDate: "",
@@ -40,11 +45,38 @@ const statusOptions: SubscriptionStatus[] = [
   "terminated",
 ];
 
+function optionValue(option: PppoeAccountOption) {
+  if (option.pppoeAccountId) return `id:${option.pppoeAccountId}`;
+  return `user:${option.username}`;
+}
+
+function parseLinkValue(value: string): {
+  pppoeAccountId: string;
+  radiusUsername: string;
+} {
+  if (!value) return { pppoeAccountId: "", radiusUsername: "" };
+  if (value.startsWith("id:")) {
+    return { pppoeAccountId: value.slice(3), radiusUsername: "" };
+  }
+  if (value.startsWith("user:")) {
+    return { pppoeAccountId: "", radiusUsername: value.slice(5) };
+  }
+  // Legacy numeric id from older forms
+  return { pppoeAccountId: value, radiusUsername: "" };
+}
+
+function currentLinkValue(form: SubscriptionFormValues) {
+  if (form.pppoeAccountId) return `id:${form.pppoeAccountId}`;
+  if (form.radiusUsername) return `user:${form.radiusUsername}`;
+  return "";
+}
+
 export function SubscriptionForm({
   initialValues,
   submitLabel,
   loading = false,
   embedded = false,
+  excludeSubscriptionId,
   onSubmit,
   onCancel,
 }: SubscriptionFormProps) {
@@ -53,10 +85,16 @@ export function SubscriptionForm({
     ...initialValues,
   });
   const [error, setError] = useState("");
-  const [pppoeAccounts, setPppoeAccounts] = useState<PppoeAccount[]>([]);
+  const [options, setOptions] = useState<PppoeAccountOption[]>([]);
+  const [optionsSource, setOptionsSource] = useState<"radius" | "local" | "mikrotik">(
+    "local",
+  );
   const [accountsLoading, setAccountsLoading] = useState(false);
   const { customers, loading: customersLoading } = useCustomers();
   const { plans, loading: plansLoading } = useServicePlans();
+  const selectedPlan = plans.find(
+    (plan) => String(plan.id) === form.servicePlanId,
+  );
 
   useEffect(() => {
     if (initialValues) {
@@ -65,38 +103,103 @@ export function SubscriptionForm({
   }, [initialValues]);
 
   useEffect(() => {
+    let cancelled = false;
     setAccountsLoading(true);
-    fetchPppoeAccounts({ limit: 100 })
-      .then((response) => setPppoeAccounts(response.items))
-      .catch(() => setPppoeAccounts([]))
-      .finally(() => setAccountsLoading(false));
-  }, []);
 
-  const availablePppoeAccounts = pppoeAccounts.filter((account) => {
-    if (form.customerId && account.customerId !== Number(form.customerId)) {
-      return false;
+    async function loadOptions() {
+      try {
+        const response = await fetchPppoeAccountOptions({
+          customerId: form.customerId || undefined,
+          servicePlanId: form.servicePlanId || undefined,
+          excludeSubscriptionId,
+          limit: 100,
+        });
+        if (cancelled) return;
+        setOptions(response.items);
+        setOptionsSource(response.source);
+      } catch {
+        try {
+          const fallback = await fetchPppoeAccounts({ limit: 100 });
+          if (cancelled) return;
+          const mapped: PppoeAccountOption[] = fallback.items
+            .filter((account) => {
+              if (
+                form.customerId &&
+                account.customerId !== Number(form.customerId)
+              ) {
+                return false;
+              }
+              if (
+                form.servicePlanId &&
+                account.servicePlanId !== Number(form.servicePlanId)
+              ) {
+                return false;
+              }
+              return true;
+            })
+            .map((account) => ({
+              username: account.username,
+              groupname: account.profileName,
+              pppoeAccountId: account.id,
+              customerId: account.customerId,
+              servicePlanId: account.servicePlanId,
+              linkedSubscriptionId: null,
+              profileName: account.profileName,
+              router: account.router,
+              customer: account.customer,
+              servicePlan: account.servicePlan,
+            }));
+          setOptions(mapped);
+          setOptionsSource("mikrotik");
+        } catch {
+          if (!cancelled) {
+            setOptions([]);
+            setOptionsSource("local");
+          }
+        }
+      } finally {
+        if (!cancelled) setAccountsLoading(false);
+      }
     }
 
+    void loadOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [form.customerId, form.servicePlanId, excludeSubscriptionId]);
+
+  const selectOptions = useMemo(() => {
+    const current = currentLinkValue(form);
+    const items = options.map((option) => {
+      const routerLabel = option.router?.name ?? "RADIUS";
+      const planLabel =
+        option.servicePlan?.name ?? option.profileName ?? option.groupname ?? "—";
+      const sessions =
+        typeof option.activeSessions === "number" && option.activeSessions > 0
+          ? ` · ${option.activeSessions} session(s)`
+          : "";
+      return {
+        label: `${option.username} — ${routerLabel} — ${planLabel}${sessions}`,
+        value: optionValue(option),
+      };
+    });
+
+    // Keep current selection visible while editing even if filters temporarily hide it
     if (
-      form.servicePlanId &&
-      account.servicePlanId !== Number(form.servicePlanId)
+      current &&
+      !items.some((item) => item.value === current) &&
+      (form.pppoeAccountId || form.radiusUsername)
     ) {
-      return false;
+      items.unshift({
+        label: form.radiusUsername
+          ? `${form.radiusUsername} (current)`
+          : `PPPoE #${form.pppoeAccountId} (current)`,
+        value: current,
+      });
     }
 
-    return true;
-  });
-
-  useEffect(() => {
-    if (
-      form.pppoeAccountId &&
-      !availablePppoeAccounts.some(
-        (account) => String(account.id) === form.pppoeAccountId,
-      )
-    ) {
-      setForm((current) => ({ ...current, pppoeAccountId: "" }));
-    }
-  }, [availablePppoeAccounts, form.pppoeAccountId]);
+    return items;
+  }, [options, form]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -159,26 +262,83 @@ export function SubscriptionForm({
           />
         </label>
 
-        <label className="flex flex-col gap-1 text-sm md:col-span-2">
-          <span className="font-medium text-slate-700">PPPoE Account</span>
-          <SearchableSelect
-            disabled={accountsLoading}
-            value={form.pppoeAccountId}
-            onChange={(nextValue) =>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Label / Note</span>
+          <input
+            type="text"
+            maxLength={50}
+            value={form.label}
+            placeholder="Home, Store, Account1"
+            onChange={(event) =>
               setForm((current) => ({
                 ...current,
-                pppoeAccountId: nextValue,
+                label: event.target.value,
               }))
             }
+            className="rounded-md border border-slate-200 px-3 py-2 outline-none focus:border-emerald-500"
+          />
+          <span className="text-xs text-slate-500">
+            Distinguishes multiple subscriptions for the same customer.
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">
+            Custom monthly amount
+          </span>
+          <input
+            type="number"
+            min={0.01}
+            step="0.01"
+            value={form.monthlyAmount}
+            placeholder={
+              selectedPlan
+                ? `Blank = plan rate ${formatMoney(selectedPlan.monthlyPrice)}`
+                : "Leave blank to use plan rate"
+            }
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                monthlyAmount: event.target.value,
+              }))
+            }
+            className="rounded-md border border-slate-200 px-3 py-2 outline-none focus:border-emerald-500"
+          />
+          <span className="text-xs text-slate-500">
+            Optional negotiated fee (e.g. 1-user deal). Leave blank to bill the
+            service plan catalog price
+            {selectedPlan
+              ? ` (${formatMoney(selectedPlan.monthlyPrice)})`
+              : ""}
+            .
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm md:col-span-2">
+          <span className="font-medium text-slate-700">
+            PPPoE / RADIUS Account
+          </span>
+          <SearchableSelect
+            disabled={accountsLoading}
+            value={currentLinkValue(form)}
+            onChange={(nextValue) => {
+              const parsed = parseLinkValue(nextValue);
+              setForm((current) => ({
+                ...current,
+                pppoeAccountId: parsed.pppoeAccountId,
+                radiusUsername: parsed.radiusUsername,
+              }));
+            }}
             emptyOptionLabel="Not linked"
-            options={availablePppoeAccounts.map((account) => ({
-              label: `${account.username} - ${account.router.name} - ${account.servicePlan?.name ?? account.profileName}`,
-              value: String(account.id),
-            }))}
+            options={selectOptions}
             className="rounded-md border border-slate-200 px-3 py-2 outline-none focus:border-emerald-500 disabled:bg-slate-50"
           />
           <span className="text-xs text-slate-500">
-            Options are filtered by selected customer and service plan.
+            {optionsSource === "radius"
+              ? "RADIUS usernames for the selected plan. Already-linked accounts are hidden."
+              : optionsSource === "mikrotik"
+                ? "Local MikroTik PPPoE list (RADIUS options unavailable)."
+                : "Local PPPoE accounts. Already-linked active subscriptions are excluded."}
           </span>
         </label>
 

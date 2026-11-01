@@ -189,6 +189,11 @@ export const navigationGroups: NavGroup[] = [
         href: "/billing/collector-payment-uploads",
         icon: Upload,
       },
+      {
+        label: "Collector Remittances",
+        href: "/billing/collector-remittances",
+        icon: HandCoins,
+      },
     ],
   },
   {

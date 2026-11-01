@@ -27,6 +27,7 @@ import {
 } from "@/lib/invoice-items";
 import type { BillingCycle } from "@/types/billing-cycle";
 import type { Invoice, InvoiceItemType, InvoiceStatus } from "@/types/invoice";
+import { createPaymentGatewayCheckout } from "@/hooks/use-payment-gateways";
 
 const statusOptions: Array<{ label: string; value: InvoiceStatus | "" }> = [
   { label: "All statuses", value: "" },
@@ -77,6 +78,7 @@ export default function InvoicesPage() {
   const [editNotes, setEditNotes] = useState("");
   const [editFinanceUserId, setEditFinanceUserId] = useState("");
   const [editItems, setEditItems] = useState<InvoiceItemFormRow[]>([]);
+  const [checkoutLoadingId, setCheckoutLoadingId] = useState<number | null>(null);
 
   const query = useMemo(
     () => ({
@@ -108,6 +110,38 @@ export default function InvoicesPage() {
     setGenerateOpen(false);
     setGenerateCycleId("");
     setLocalError("");
+  }
+
+  function canPayOnline(invoice: Invoice) {
+    return (
+      Number(invoice.balance) > 0 &&
+      invoice.status !== "cancelled" &&
+      invoice.status !== "draft" &&
+      invoice.status !== "paid"
+    );
+  }
+
+  async function handlePayOnline(invoice: Invoice) {
+    setCheckoutLoadingId(invoice.id);
+    setLocalError("");
+    try {
+      const transaction = await createPaymentGatewayCheckout({
+        invoiceId: invoice.id,
+      });
+
+      if (!transaction.checkoutUrl) {
+        throw new Error("Gateway did not return a checkout URL.");
+      }
+
+      window.open(transaction.checkoutUrl, "_blank", "noopener,noreferrer");
+      setMessage(`Checkout link created for ${invoice.invoiceNumber}.`);
+    } catch (caught) {
+      setLocalError(
+        caught instanceof Error ? caught.message : "Unable to create checkout link",
+      );
+    } finally {
+      setCheckoutLoadingId(null);
+    }
   }
 
   function openEdit(invoice: Invoice) {
@@ -378,6 +412,16 @@ export default function InvoicesPage() {
                       >
                         Edit
                       </button>
+                      {canPayOnline(invoice) ? (
+                        <button
+                          type="button"
+                          disabled={checkoutLoadingId === invoice.id}
+                          onClick={() => void handlePayOnline(invoice)}
+                          className="rounded-md border border-emerald-200 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                        >
+                          {checkoutLoadingId === invoice.id ? "Creating..." : "Pay Online"}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={async () => {

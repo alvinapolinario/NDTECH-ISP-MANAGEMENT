@@ -28,6 +28,16 @@ export class PppoeAccountsController {
     return this.accountsService.findAll(query);
   }
 
+  @Get(':id/radius-sessions')
+  listRadiusSessions(@Param('id') id: string) {
+    return this.accountsService.listRadiusSessions(Number(id));
+  }
+
+  @Post(':id/disconnect-session')
+  disconnectRadiusSessions(@Param('id') id: string) {
+    return this.accountsService.disconnectRadiusSessions(Number(id));
+  }
+
   @Get(':id/action-logs')
   findActionLogs(@Param('id') id: string) {
     return this.accountsService.findActionLogs(Number(id));

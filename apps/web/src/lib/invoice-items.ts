@@ -57,7 +57,11 @@ export function invoiceItemsToFormRows(invoice: Invoice): InvoiceItemFormRow[] {
         itemType: "recurring_service",
         description: defaultItemDescription("recurring_service", invoice),
         quantity: "1",
-        unitPrice: String(invoice.subscription?.servicePlan.monthlyPrice ?? invoice.total),
+        unitPrice: String(
+          invoice.subscription?.monthlyAmount ??
+            invoice.subscription?.servicePlan.monthlyPrice ??
+            invoice.total,
+        ),
       },
     ];
   }

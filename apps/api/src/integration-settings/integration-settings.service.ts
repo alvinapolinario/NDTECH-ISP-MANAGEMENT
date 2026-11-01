@@ -208,6 +208,22 @@ export class IntegrationSettingsService implements OnModuleInit {
     };
   }
 
+  async getPaymongoConfig() {
+    const [secretKey, publicKey, webhookSecret, enabled] = await Promise.all([
+      this.getSecret('paymongo.secret_key'),
+      this.getSecret('paymongo.public_key'),
+      this.getSecret('paymongo.webhook_secret'),
+      this.getBoolean('paymongo.enabled', false),
+    ]);
+
+    return {
+      secretKey,
+      publicKey,
+      webhookSecret,
+      enabled,
+    };
+  }
+
   private async refreshCache() {
     this.cache.clear();
     const rows = await this.prisma.integrationSetting.findMany();

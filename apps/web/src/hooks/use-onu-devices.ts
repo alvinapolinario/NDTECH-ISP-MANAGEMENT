@@ -44,6 +44,15 @@ export async function deleteOnuDevice(id: number) {
   return apiRequest<OnuDevice>(`/onu-devices/${id}`, { method: "DELETE" });
 }
 
+export async function pollOnuDevice(id: number) {
+  return apiRequest<{
+    onuDeviceId: number;
+    oltDeviceId: number;
+    onu: OnuDevice;
+    oltPoll: { success: boolean; onuUpdated: number; error?: string };
+  }>(`/onu-devices/${id}/poll`, { method: "POST" });
+}
+
 export function useOnuDevices(params: OnuDeviceListParams) {
   const [data, setData] = useState<OnuDeviceListResponse>({
     items: [],

@@ -5,7 +5,12 @@ import { useEffect, useState } from "react";
 import { SubscriptionStatusBadge } from "@/components/isp/subscription-status-badge";
 import { SubscriptionBillingHistory } from "@/components/isp/subscription-billing-history";
 import { deleteSubscription, useSubscription } from "@/hooks/use-subscriptions";
-import { customerDisplayName, formatDate, formatMoney } from "@/lib/format";
+import {
+  customerDisplayName,
+  formatDate,
+  formatMoney,
+  subscriptionMonthlyFee,
+} from "@/lib/format";
 import { useRouter } from "next/navigation";
 
 export default function SubscriptionDetailPage({
@@ -69,7 +74,8 @@ export default function SubscriptionDetailPage({
           <div className="flex items-center gap-2">
             <SubscriptionStatusBadge status={subscription.status} />
             <span className="text-sm text-slate-600">
-              {customerDisplayName(subscription.customer)} ·{" "}
+              {customerDisplayName(subscription.customer)}
+              {subscription.label ? ` · ${subscription.label}` : ""} ·{" "}
               {subscription.servicePlan.name}
             </span>
           </div>
@@ -128,6 +134,12 @@ export default function SubscriptionDetailPage({
           <h2 className="mb-4 text-sm font-semibold text-slate-900">Service Plan</h2>
           <dl className="grid gap-3 text-sm">
             <div>
+              <dt className="text-slate-500">Label / Note</dt>
+              <dd className="font-medium text-slate-900">
+                {subscription.label || "—"}
+              </dd>
+            </div>
+            <div>
               <dt className="text-slate-500">Plan</dt>
               <dd className="font-medium text-slate-900">
                 {subscription.servicePlan.name}
@@ -139,7 +151,21 @@ export default function SubscriptionDetailPage({
             </div>
             <div>
               <dt className="text-slate-500">Monthly Fee</dt>
-              <dd>{formatMoney(subscription.servicePlan.monthlyPrice)}</dd>
+              <dd>
+                {formatMoney(subscriptionMonthlyFee(subscription))}
+                {subscription.monthlyAmount !== null &&
+                subscription.monthlyAmount !== undefined &&
+                subscription.monthlyAmount !== "" ? (
+                  <span className="mt-1 block text-xs font-normal text-slate-500">
+                    Custom amount (plan catalog{" "}
+                    {formatMoney(subscription.servicePlan.monthlyPrice)})
+                  </span>
+                ) : (
+                  <span className="mt-1 block text-xs font-normal text-slate-500">
+                    Plan catalog price
+                  </span>
+                )}
+              </dd>
             </div>
             <div>
               <dt className="text-slate-500">Speed</dt>

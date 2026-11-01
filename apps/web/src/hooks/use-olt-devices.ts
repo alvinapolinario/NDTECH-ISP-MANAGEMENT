@@ -42,6 +42,29 @@ export async function deleteOltDevice(id: number) {
   return apiRequest<OltDevice>(`/olt-devices/${id}`, { method: "DELETE" });
 }
 
+export async function testOltSnmp(id: number) {
+  return apiRequest<{
+    deviceId: number;
+    success: boolean;
+    latencyMs: number;
+    sysDescr?: string | null;
+    sysName?: string | null;
+    sysUpTime?: number | null;
+    error?: string;
+  }>(`/olt-devices/${id}/test-snmp`, { method: "POST" });
+}
+
+export async function pollOltDevice(id: number) {
+  return apiRequest<{
+    deviceId: number;
+    success: boolean;
+    latencyMs: number;
+    onuUpdated: number;
+    onuReadings: Array<Record<string, unknown>>;
+    error?: string;
+  }>(`/olt-devices/${id}/poll`, { method: "POST" });
+}
+
 export function useOltDevices(params: OltDeviceListParams) {
   const [data, setData] = useState<OltDeviceListResponse>({
     items: [],

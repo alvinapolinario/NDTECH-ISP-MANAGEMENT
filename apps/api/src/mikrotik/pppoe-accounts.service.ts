@@ -10,9 +10,13 @@ import {
   PppoeAccountStatus,
   Prisma,
   ServicePlan,
+  SubscriptionStatus,
 } from '@prisma/client';
 import { getPagination } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
+import { RadiusCoaService } from '../radius/radius-coa.service';
+import { RadiusProvisionerService } from '../radius/radius-provisioner.service';
+import { shouldUseMikrotikProfileProvisioning } from '../radius/radius-provision.config';
 import { MikroTikClientFactory } from './clients/mikrotik-client.factory';
 import { SecretCryptoService } from './crypto/secret-crypto.service';
 import { CreatePppoeAccountDto } from './dto/create-pppoe-account.dto';
@@ -24,6 +28,12 @@ import {
   resolvePlanPppProfileName,
 } from './mikrotik-profile.config';
 import { PppoeAccountActionLoggerService } from './pppoe-account-action-logger.service';
+
+type NetworkCommandRecord = {
+  commandType: string;
+  message: string;
+  payload?: Record<string, unknown>;
+};
 
 type AccountWithRouter = Prisma.PppoeAccountGetPayload<{
   include: { router: true; servicePlan: true };
@@ -37,6 +47,8 @@ export class PppoeAccountsService {
     private readonly clientFactory: MikroTikClientFactory,
     private readonly commandLogger: MikrotikCommandLoggerService,
     private readonly actionLogger: PppoeAccountActionLoggerService,
+    private readonly radiusProvisioner: RadiusProvisionerService,
+    private readonly radiusCoa: RadiusCoaService,
   ) {}
 
   async create(dto: CreatePppoeAccountDto) {
@@ -122,6 +134,52 @@ export class PppoeAccountsService {
     await this.findOne(id);
     const items = await this.actionLogger.findByAccount(id, limit);
     return { items };
+  }
+
+  async listRadiusSessions(id: number) {
+    const account = await this.loadAccountWithRouter(id);
+    const sessions = await this.radiusProvisioner
+      .isEnabled()
+      ? await this.radiusCoa.listActiveSessions(account.username)
+      : [];
+
+    return {
+      username: account.username,
+      items: sessions,
+      source: 'radacct' as const,
+    };
+  }
+
+  async disconnectRadiusSessions(id: number) {
+    const account = await this.loadAccountWithRouter(id);
+
+    if (!this.radiusProvisioner.isEnabled()) {
+      throw new BadRequestException('RADIUS provisioning is not enabled');
+    }
+
+    const record = await this.radiusProvisioner.disconnectSessions(
+      account.username,
+    );
+    await this.logNetworkCommand(account.routerId, record);
+
+    await this.actionLogger.log({
+      pppoeAccountId: account.id,
+      customerId: account.customerId,
+      routerId: account.routerId,
+      action: PppoeAccountActionType.profile_change,
+      triggerSource: 'manual_disconnect',
+      previousStatus: account.status,
+      newStatus: account.status,
+      previousProfile: account.profileName,
+      newProfile: account.profileName,
+      notes: record.message,
+    });
+
+    return {
+      accountId: account.id,
+      username: account.username,
+      ...record.payload,
+    };
   }
 
   async update(id: number, dto: UpdatePppoeAccountDto) {
@@ -233,6 +291,104 @@ export class PppoeAccountsService {
     return this.sanitizeAccount(updated);
   }
 
+  async syncFromSubscription(
+    subscriptionId: number,
+    triggerSource = 'subscription',
+  ) {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      include: {
+        servicePlan: true,
+        pppoeAccount: {
+          include: { router: true, servicePlan: true },
+        },
+      },
+    });
+
+    if (!subscription?.pppoeAccount) {
+      return null;
+    }
+
+    const account = subscription.pppoeAccount;
+    const plan = subscription.servicePlan ?? account.servicePlan;
+
+    if (subscription.status === SubscriptionStatus.suspended) {
+      if (account.status === PppoeAccountStatus.suspended) {
+        if (this.radiusProvisioner.isEnabled()) {
+          const record = await this.radiusProvisioner.suspendUser(account.username);
+          await this.logNetworkCommand(account.routerId, record);
+        }
+        return this.findOne(account.id);
+      }
+
+      return this.suspend(account.id);
+    }
+
+    if (subscription.status === SubscriptionStatus.active) {
+      if (account.status === PppoeAccountStatus.suspended) {
+        return this.restoreAccount(account.id, {
+          action: PppoeAccountActionType.restore,
+          triggerSource,
+          account,
+          servicePlan: plan,
+        });
+      }
+
+      const planProfile = plan ? resolvePlanPppProfileName(plan) : null;
+      if (!planProfile) {
+        return this.findOne(account.id);
+      }
+
+      const previousProfile = account.profileName;
+      const record = await this.applyProfileOnRouter(
+        account,
+        planProfile,
+        true,
+      );
+
+      const updated = await this.prisma.pppoeAccount.update({
+        where: { id: account.id },
+        data: {
+          servicePlanId: subscription.servicePlanId,
+          profileName: planProfile,
+          lastSyncedAt: new Date(),
+        },
+        include: this.includeRelations(),
+      });
+
+      if (previousProfile !== planProfile) {
+        await this.actionLogger.log({
+          pppoeAccountId: account.id,
+          customerId: account.customerId,
+          routerId: account.routerId,
+          action: PppoeAccountActionType.profile_change,
+          triggerSource,
+          previousStatus: account.status,
+          newStatus: account.status,
+          previousProfile,
+          newProfile: planProfile,
+          notes: record.message,
+        });
+      }
+
+      return this.sanitizeAccount(updated);
+    }
+
+    if (
+      subscription.status === SubscriptionStatus.cancelled ||
+      subscription.status === SubscriptionStatus.terminated
+    ) {
+      if (this.radiusProvisioner.isEnabled()) {
+        const record = await this.radiusProvisioner.suspendUser(account.username);
+        await this.logNetworkCommand(account.routerId, record);
+      } else if (shouldUseMikrotikProfileProvisioning()) {
+        return this.suspend(account.id);
+      }
+    }
+
+    return this.findOne(account.id);
+  }
+
   async remove(id: number) {
     await this.findOne(id);
     const deleted = await this.prisma.pppoeAccount.delete({
@@ -253,8 +409,8 @@ export class PppoeAccountsService {
     }
 
     const client = this.clientFactory.create(account.router);
-    const record = await client.enablePppoeSecret(account.username);
-    await this.logMikrotikCommand(account.routerId, record);
+    const record = await this.applyNetworkEnable(account, client);
+    await this.logNetworkCommand(account.routerId, record);
 
     const updated = await this.prisma.pppoeAccount.update({
       where: { id },
@@ -283,10 +439,8 @@ export class PppoeAccountsService {
 
   async disable(id: number) {
     const account = await this.loadAccountWithRouter(id);
-    const client = this.clientFactory.create(account.router);
-    const record = await client.disablePppoeSecret(account.username);
-
-    await this.logMikrotikCommand(account.routerId, record);
+    const record = await this.applyNetworkDisable(account);
+    await this.logNetworkCommand(account.routerId, record);
 
     const updated = await this.prisma.pppoeAccount.update({
       where: { id },
@@ -517,7 +671,16 @@ export class PppoeAccountsService {
     account: AccountWithRouter,
     profileName: string,
     ensureEnabled: boolean,
-  ) {
+  ): Promise<NetworkCommandRecord> {
+    if (this.radiusProvisioner.isEnabled()) {
+      const record = await this.radiusProvisioner.assignUserGroup(
+        account.username,
+        profileName,
+      );
+      await this.logNetworkCommand(account.routerId, record);
+      return record;
+    }
+
     const client = this.clientFactory.create(account.router);
 
     try {
@@ -541,6 +704,34 @@ export class PppoeAccountsService {
           : 'Unable to update PPPoE secret on MikroTik router',
       );
     }
+  }
+
+  private async applyNetworkEnable(
+    account: AccountWithRouter,
+    client: ReturnType<MikroTikClientFactory['create']>,
+  ) {
+    if (this.radiusProvisioner.isEnabled()) {
+      const plan =
+        account.servicePlan ??
+        (account.servicePlanId
+          ? await this.prisma.servicePlan.findUnique({
+              where: { id: account.servicePlanId },
+            })
+          : null);
+      const profile = this.resolveRestoreProfile(account, plan);
+      return this.radiusProvisioner.assignUserGroup(account.username, profile);
+    }
+
+    return client.enablePppoeSecret(account.username);
+  }
+
+  private async applyNetworkDisable(account: AccountWithRouter) {
+    if (this.radiusProvisioner.isEnabled()) {
+      return this.radiusProvisioner.disableUser(account.username);
+    }
+
+    const client = this.clientFactory.create(account.router);
+    return client.disablePppoeSecret(account.username);
   }
 
   private async loadAccountWithRouter(id: number) {
@@ -615,9 +806,76 @@ export class PppoeAccountsService {
       newUsername?: string;
     },
   ) {
+    if (
+      this.radiusProvisioner.isEnabled() &&
+      update.profileName &&
+      !update.password &&
+      !update.remoteAddress &&
+      !update.newUsername
+    ) {
+      const record = await this.radiusProvisioner.assignUserGroup(
+        update.username,
+        update.profileName,
+      );
+      await this.logNetworkCommand(account.routerId, record);
+      return;
+    }
+
+    if (this.radiusProvisioner.isEnabled()) {
+      if (update.profileName) {
+        const record = await this.radiusProvisioner.assignUserGroup(
+          update.newUsername ?? update.username,
+          update.profileName,
+        );
+        await this.logNetworkCommand(account.routerId, record);
+      }
+
+      if (update.password) {
+        const record = await this.radiusProvisioner.updatePassword(
+          update.newUsername ?? update.username,
+          update.password,
+        );
+        await this.logNetworkCommand(account.routerId, record);
+      }
+
+      if (update.remoteAddress !== undefined || update.newUsername) {
+        // Static IP and username changes remain MikroTik-local for now.
+      }
+
+      if (
+        update.remoteAddress !== undefined ||
+        update.newUsername ||
+        (!update.profileName && !update.password)
+      ) {
+        const client = this.clientFactory.create(account.router);
+        const record = await client.updatePppoeSecret(update);
+        await this.logMikrotikCommand(account.routerId, record);
+      }
+
+      return;
+    }
+
     const client = this.clientFactory.create(account.router);
     const record = await client.updatePppoeSecret(update);
     await this.logMikrotikCommand(account.routerId, record);
+  }
+
+  private async logNetworkCommand(
+    routerId: number,
+    record: NetworkCommandRecord,
+  ) {
+    if (record.commandType.startsWith('radius_')) {
+      await this.commandLogger.log({
+        routerId,
+        commandType: record.commandType,
+        commandPayload: record.payload,
+        responseMessage: record.message,
+        status: this.commandStatus(),
+      });
+      return;
+    }
+
+    await this.logMikrotikCommand(routerId, record);
   }
 
   private async logMikrotikCommand(

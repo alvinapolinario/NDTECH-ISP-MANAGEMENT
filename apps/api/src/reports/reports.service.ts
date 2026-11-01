@@ -72,13 +72,20 @@ export class ReportsService {
         { label: 'Cancelled Subscribers', value: cancelled },
         { label: 'Terminated Subscribers', value: terminated },
       ],
-      items: items.map((item) => ({
-        ...item,
-        servicePlan: {
-          ...item.servicePlan,
-          monthlyPrice: money(item.servicePlan.monthlyPrice),
-        },
-      })),
+      items: items.map((item) => {
+        const effectiveMonthlyPrice =
+          item.monthlyAmount ?? item.servicePlan.monthlyPrice;
+        return {
+          ...item,
+          monthlyAmount:
+            item.monthlyAmount != null ? money(item.monthlyAmount) : null,
+          effectiveMonthlyPrice: money(effectiveMonthlyPrice),
+          servicePlan: {
+            ...item.servicePlan,
+            monthlyPrice: money(item.servicePlan.monthlyPrice),
+          },
+        };
+      }),
       meta: reportMeta(total, page, limit),
     };
   }
@@ -304,6 +311,152 @@ export class ReportsService {
         },
       })),
       meta: reportMeta(total, page, limit),
+    };
+  }
+
+  async collectionsByCollector(query: ReportQueryDto) {
+    const now = new Date();
+    const from = query.from
+      ? new Date(`${query.from}T00:00:00.000`)
+      : new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = query.to
+      ? new Date(`${query.to}T23:59:59.999`)
+      : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const paymentWhere: Prisma.PaymentWhereInput = {
+      deletedAt: null,
+      status: 'posted',
+      collectorUserId: { not: null },
+      paymentDate: { gte: from, lte: to },
+      ...(query.collectorUserId
+        ? { collectorUserId: query.collectorUserId }
+        : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { collector: { name: { contains: query.search } } },
+              { collector: { email: { contains: query.search } } },
+              { receivedBy: { contains: query.search } },
+            ],
+          }
+        : {}),
+    };
+
+    const payments = await this.prisma.payment.findMany({
+      where: paymentWhere,
+      select: {
+        amount: true,
+        paymentMethod: true,
+        collectorUserId: true,
+        collector: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    const byCollector = new Map<
+      number,
+      {
+        collectorUserId: number;
+        collectorName: string;
+        collectorEmail: string;
+        paymentCount: number;
+        totalCollected: number;
+        cashTotal: number;
+        gcashTotal: number;
+        otherTotal: number;
+      }
+    >();
+
+    for (const payment of payments) {
+      if (!payment.collectorUserId || !payment.collector) continue;
+
+      const amount = Number(payment.amount);
+      const current = byCollector.get(payment.collectorUserId) ?? {
+        collectorUserId: payment.collectorUserId,
+        collectorName: payment.collector.name,
+        collectorEmail: payment.collector.email,
+        paymentCount: 0,
+        totalCollected: 0,
+        cashTotal: 0,
+        gcashTotal: 0,
+        otherTotal: 0,
+      };
+
+      current.paymentCount += 1;
+      current.totalCollected += amount;
+      if (payment.paymentMethod === 'cash') {
+        current.cashTotal += amount;
+      } else if (payment.paymentMethod === 'gcash') {
+        current.gcashTotal += amount;
+      } else {
+        current.otherTotal += amount;
+      }
+
+      byCollector.set(payment.collectorUserId, current);
+    }
+
+    const collectorIds = [...byCollector.keys()];
+    const openCases = collectorIds.length
+      ? await this.prisma.collectionCase.groupBy({
+          by: ['assignedCollectorUserId'],
+          where: {
+            deletedAt: null,
+            assignedCollectorUserId: { in: collectorIds },
+            status: {
+              in: ['pending', 'contacted', 'promised_to_pay', 'escalated'],
+            },
+          },
+          _count: { _all: true },
+        })
+      : [];
+
+    const openCaseMap = new Map(
+      openCases
+        .filter((row) => row.assignedCollectorUserId != null)
+        .map((row) => [row.assignedCollectorUserId!, row._count._all]),
+    );
+
+    const items = [...byCollector.values()]
+      .map((row) => ({
+        collectorUserId: row.collectorUserId,
+        collectorName: row.collectorName,
+        collectorEmail: row.collectorEmail,
+        paymentCount: row.paymentCount,
+        totalCollected: money(row.totalCollected),
+        cashTotal: money(row.cashTotal),
+        gcashTotal: money(row.gcashTotal),
+        otherTotal: money(row.otherTotal),
+        openCaseCount: openCaseMap.get(row.collectorUserId) ?? 0,
+      }))
+      .sort((a, b) => Number(b.totalCollected) - Number(a.totalCollected));
+
+    const totalCollected = items.reduce(
+      (sum, item) => sum + Number(item.totalCollected),
+      0,
+    );
+    const cashTotal = items.reduce((sum, item) => sum + Number(item.cashTotal), 0);
+    const paymentCount = items.reduce((sum, item) => sum + item.paymentCount, 0);
+
+    return {
+      summary: [
+        { label: 'Collectors', value: items.length },
+        { label: 'Payments', value: paymentCount },
+        {
+          label: 'Total Collected',
+          value: money(totalCollected),
+          format: 'money',
+        },
+        {
+          label: 'Cash Collected',
+          value: money(cashTotal),
+          format: 'money',
+        },
+      ],
+      period: {
+        from: from.toISOString().slice(0, 10),
+        to: to.toISOString().slice(0, 10),
+      },
+      items,
+      meta: reportMeta(items.length, 1, items.length || 10),
     };
   }
 

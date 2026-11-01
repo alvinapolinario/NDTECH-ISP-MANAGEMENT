@@ -76,7 +76,20 @@ enum NetworkMonitorDeviceType {
   mikrotik_router
   olt_device
   onu_device
+  switch_device
   other
+}
+
+enum SwitchVendor {
+  mikrotik
+  unifi
+  edgeswitch
+}
+
+enum SwitchDeviceStatus {
+  active
+  inactive
+  maintenance
 }
 
 enum NetworkMonitorMethod {
@@ -247,6 +260,26 @@ enum PaymentStatus {
   voided
 }
 
+enum CollectorRemittanceStatus {
+  recorded
+  voided
+}
+
+enum PaymentGatewayProvider {
+  paymongo
+  stripe
+  gcash
+  maya
+}
+
+enum PaymentGatewayTransactionStatus {
+  pending
+  paid
+  failed
+  expired
+  cancelled
+}
+
 enum ExpenseStatus {
   recorded
   voided
@@ -392,6 +425,9 @@ model User {
   apiAccessTokens     ApiAccessToken[]
   sentSmsMessages     SmsMessage[]
   integrationSettings IntegrationSetting[] @relation("IntegrationSettingUpdatedBy")
+
+  collectorRemittances CollectorRemittance[] @relation("CollectorRemittanceCollector")
+  receivedRemittances  CollectorRemittance[] @relation("CollectorRemittanceReceivedBy")
 
   @@map("users")
 }
@@ -554,6 +590,7 @@ model Customer {
   installationRequests InstallationRequest[]
   invoices             Invoice[]
   payments             Payment[]
+  paymentGatewayTransactions PaymentGatewayTransaction[]
   billingAdjustments   BillingAdjustment[]
   collectionCases      CollectionCase[]
   tickets              Ticket[]
@@ -703,6 +740,8 @@ model Subscription {
   customerId         Int                @map("customer_id")
   servicePlanId      Int                @map("service_plan_id")
   pppoeAccountId     Int?               @map("pppoe_account_id")
+  label              String?
+  monthlyAmount      Decimal?           @map("monthly_amount") @db.Decimal(10, 2)
   billingDay         Int                @map("billing_day")
   startDate          DateTime           @map("start_date") @db.Date
   endDate            DateTime?          @map("end_date") @db.Date
@@ -745,6 +784,7 @@ model Invoice {
   assignedFinanceUser   User?         @relation("InvoiceFinanceReviewer", fields: [assignedFinanceUserId], references: [id])
   items          InvoiceItem[]
   payments       Payment[]
+  paymentGatewayTransactions PaymentGatewayTransaction[]
   adjustments    BillingAdjustment[]
   collectionCase CollectionCase?
   pppoeAccountActions PppoeAccountActionLog[]
@@ -791,8 +831,63 @@ model Payment {
   collector       User?         @relation("PaymentCollector", fields: [collectorUserId], references: [id])
   pppoeAccountActions PppoeAccountActionLog[]
   collectorMobileEvents CollectorMobileEvent[]
+  gatewayTransaction PaymentGatewayTransaction?
 
   @@map("payments")
+}
+
+model CollectorRemittance {
+  id                 Int                       @id @default(autoincrement())
+  remittanceNumber   String                    @unique @map("remittance_number")
+  collectorUserId    Int                       @map("collector_user_id")
+  receivedByUserId   Int                       @map("received_by_user_id")
+  periodStart        DateTime                  @map("period_start") @db.Date
+  periodEnd          DateTime                  @map("period_end") @db.Date
+  expectedAmount     Decimal                   @map("expected_amount") @db.Decimal(10, 2)
+  cashReceivedAmount Decimal                   @map("cash_received_amount") @db.Decimal(10, 2)
+  variance           Decimal                   @db.Decimal(10, 2)
+  notes              String?                   @db.Text
+  status             CollectorRemittanceStatus @default(recorded)
+  remittanceDate     DateTime                  @map("remittance_date") @db.Date
+  createdAt          DateTime                  @default(now()) @map("created_at")
+  updatedAt          DateTime                  @updatedAt @map("updated_at")
+  collector          User                      @relation("CollectorRemittanceCollector", fields: [collectorUserId], references: [id])
+  receivedBy         User                      @relation("CollectorRemittanceReceivedBy", fields: [receivedByUserId], references: [id])
+
+  @@index([collectorUserId])
+  @@index([remittanceDate])
+  @@index([status])
+  @@map("collector_remittances")
+}
+
+
+model PaymentGatewayTransaction {
+  id             Int                             @id @default(autoincrement())
+  provider       PaymentGatewayProvider
+  externalId     String                          @map("external_id")
+  idempotencyKey String?                         @unique @map("idempotency_key")
+  invoiceId      Int                             @map("invoice_id")
+  customerId     Int                             @map("customer_id")
+  amount         Decimal                         @db.Decimal(10, 2)
+  currency       String                          @default("PHP")
+  status         PaymentGatewayTransactionStatus @default(pending)
+  checkoutUrl    String?                         @map("checkout_url") @db.Text
+  paymentId      Int?                            @unique @map("payment_id")
+  channel        String?
+  metadata       Json?
+  webhookEvents  Json?                           @map("webhook_events")
+  expiresAt      DateTime?                       @map("expires_at")
+  paidAt         DateTime?                       @map("paid_at")
+  createdAt      DateTime                        @default(now()) @map("created_at")
+  updatedAt      DateTime                        @updatedAt @map("updated_at")
+  invoice        Invoice                         @relation(fields: [invoiceId], references: [id])
+  customer       Customer                        @relation(fields: [customerId], references: [id])
+  payment        Payment?                        @relation(fields: [paymentId], references: [id])
+
+  @@unique([provider, externalId])
+  @@index([invoiceId])
+  @@index([status])
+  @@map("payment_gateway_transactions")
 }
 
 model BillingAdjustment {
@@ -982,9 +1077,13 @@ model OltDevice {
   uplinkPortCount Int             @default(0) @map("uplink_port_count")
   snmpVersion    SnmpVersion      @default(v2c) @map("snmp_version")
   snmpCommunity  String?          @map("snmp_community")
+  snmpPort       Int              @default(161) @map("snmp_port")
   status         OltDeviceStatus  @default(active)
   location       String?
   notes          String?          @db.Text
+  sysDescr       String?          @map("sys_descr") @db.Text
+  sysName        String?          @map("sys_name")
+  uptimeSeconds  Int?             @map("uptime_seconds")
   lastPolledAt   DateTime?        @map("last_polled_at")
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
@@ -1024,9 +1123,52 @@ model OnuDevice {
   customer               Customer?       @relation(fields: [customerId], references: [id])
   subscription           Subscription?   @relation(fields: [subscriptionId], references: [id])
   monitoringTargets      NetworkMonitoringTarget[]
+  signalLogs             OnuSignalLog[]
 
   @@unique([oltDeviceId, ponPort, onuId])
   @@map("onu_devices")
+}
+
+model OnuSignalLog {
+  id             Int       @id @default(autoincrement())
+  onuDeviceId    Int       @map("onu_device_id")
+  rxPower        Decimal?  @map("rx_power") @db.Decimal(6, 2)
+  txPower        Decimal?  @map("tx_power") @db.Decimal(6, 2)
+  distanceMeters Int?      @map("distance_meters")
+  polledAt       DateTime  @default(now()) @map("polled_at")
+  onuDevice      OnuDevice @relation(fields: [onuDeviceId], references: [id])
+
+  @@index([onuDeviceId, polledAt])
+  @@map("onu_signal_logs")
+}
+
+model SwitchDevice {
+  id                 Int                @id @default(autoincrement())
+  name               String
+  vendor             SwitchVendor
+  model              String?
+  host               String             @unique
+  managementIp       String?            @map("management_ip")
+  snmpVersion        SnmpVersion        @default(v2c) @map("snmp_version")
+  snmpCommunity      String?            @map("snmp_community")
+  snmpPort           Int                @default(161) @map("snmp_port")
+  status             SwitchDeviceStatus @default(active)
+  location           String?
+  notes              String?            @db.Text
+  sysDescr           String?            @map("sys_descr") @db.Text
+  sysName            String?            @map("sys_name")
+  uptimeSeconds      Int?               @map("uptime_seconds")
+  cpuUsagePercent    Decimal?           @map("cpu_usage_percent") @db.Decimal(5, 2)
+  memoryUsagePercent Decimal?           @map("memory_usage_percent") @db.Decimal(5, 2)
+  portCount          Int                @default(0) @map("port_count")
+  portsUp            Int                @default(0) @map("ports_up")
+  lastPolledAt       DateTime?          @map("last_polled_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  deletedAt          DateTime?          @map("deleted_at")
+  monitoringTargets  NetworkMonitoringTarget[]
+
+  @@map("switch_devices")
 }
 
 model NetworkMonitoringTarget {
@@ -1038,6 +1180,7 @@ model NetworkMonitoringTarget {
   mikrotikRouterId   Int?                     @map("mikrotik_router_id")
   oltDeviceId        Int?                     @map("olt_device_id")
   onuDeviceId        Int?                     @map("onu_device_id")
+  switchDeviceId     Int?                     @map("switch_device_id")
   snmpCommunity      String?                  @map("snmp_community")
   status             NetworkMonitorStatus     @default(unknown)
   latencyMs          Decimal?                 @map("latency_ms") @db.Decimal(8, 2)
@@ -1056,6 +1199,7 @@ model NetworkMonitoringTarget {
   mikrotikRouter     MikrotikRouter?          @relation(fields: [mikrotikRouterId], references: [id])
   oltDevice          OltDevice?               @relation(fields: [oltDeviceId], references: [id])
   onuDevice          OnuDevice?               @relation(fields: [onuDeviceId], references: [id])
+  switchDevice       SwitchDevice?            @relation(fields: [switchDeviceId], references: [id])
   checks             NetworkMonitoringCheck[]
   alerts             NetworkAlert[]
 

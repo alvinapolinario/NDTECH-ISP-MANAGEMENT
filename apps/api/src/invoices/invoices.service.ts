@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InvoiceStatus, Prisma, SubscriptionStatus } from '@prisma/client';
+import { InvoiceLedgerService } from '../billing/invoice-ledger.service';
 import { getPagination } from '../common/pagination';
 import { resolveStaffAssignment, STAFF_ROLES } from '../common/staff-role';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,7 +16,10 @@ import { computeInvoiceDatesForCycle } from './invoice-billing-dates';
 
 @Injectable()
 export class InvoicesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly invoiceLedger: InvoiceLedgerService,
+  ) {}
 
   async findAll(query: ListInvoicesQueryDto) {
     const { page, limit, skip } = getPagination(query);
@@ -84,6 +88,15 @@ export class InvoicesService {
       );
     }
 
+    if (
+      dto.status === InvoiceStatus.paid ||
+      dto.status === InvoiceStatus.partially_paid
+    ) {
+      throw new BadRequestException(
+        'Paid / partially paid status is driven by payments and adjustments only',
+      );
+    }
+
     if (dto.items !== undefined) {
       if (!dto.items.length) {
         throw new BadRequestException('Invoice must have at least one line item');
@@ -91,12 +104,6 @@ export class InvoicesService {
 
       await this.replaceInvoiceItems(id, dto.items, current);
     }
-
-    const refreshed = await this.findOne(id);
-    const paidData =
-      dto.status === InvoiceStatus.paid
-        ? { amountPaid: refreshed.total, balance: 0 }
-        : {};
 
     const financeAssignment = await resolveStaffAssignment(
       this.prisma,
@@ -112,7 +119,6 @@ export class InvoicesService {
         ...(financeAssignment !== undefined
           ? { assignedFinanceUserId: financeAssignment.userId }
           : {}),
-        ...paidData,
       },
       include: this.includeRelations(),
     });
@@ -123,7 +129,6 @@ export class InvoicesService {
     items: UpdateInvoiceItemDto[],
     current: Awaited<ReturnType<InvoicesService['findOne']>>,
   ) {
-    const amountPaid = new Prisma.Decimal(current.amountPaid);
     const normalizedItems = items.map((item) => {
       const quantity = new Prisma.Decimal(item.quantity);
       const unitPrice = new Prisma.Decimal(item.unitPrice);
@@ -147,33 +152,41 @@ export class InvoicesService {
       (sum, item) => sum.add(item.amount),
       new Prisma.Decimal(0),
     );
-    const total = subtotal;
-    const balance = Prisma.Decimal.max(
-      total.sub(amountPaid),
-      new Prisma.Decimal(0),
-    );
 
-    await this.prisma.$transaction([
-      this.prisma.invoiceItem.deleteMany({ where: { invoiceId } }),
-      this.prisma.invoiceItem.createMany({ data: normalizedItems }),
-      this.prisma.invoice.update({
+    await this.prisma.$transaction(async (tx) => {
+      await this.invoiceLedger.lockInvoice(tx, invoiceId);
+      await tx.invoiceItem.deleteMany({ where: { invoiceId } });
+      await tx.invoiceItem.createMany({ data: normalizedItems });
+      await tx.invoice.update({
         where: { id: invoiceId },
-        data: {
-          subtotal,
-          total,
-          balance,
-          ...(amountPaid.gt(0) && balance.gt(0)
-            ? { status: InvoiceStatus.partially_paid }
-            : balance.lte(0) && amountPaid.gt(0)
-              ? { status: InvoiceStatus.paid }
-              : {}),
-        },
-      }),
-    ]);
+        data: { subtotal },
+      });
+      await this.invoiceLedger.recalculate(invoiceId, { client: tx });
+    });
   }
 
   async remove(id: number) {
-    await this.findOne(id);
+    const current = await this.findOne(id);
+
+    if (Number(current.balance) > 0) {
+      throw new BadRequestException(
+        'Cannot delete an invoice with an outstanding balance; cancel it instead',
+      );
+    }
+
+    const paymentCount = await this.prisma.payment.count({
+      where: {
+        invoiceId: id,
+        deletedAt: null,
+        status: 'posted',
+      },
+    });
+
+    if (paymentCount > 0) {
+      throw new BadRequestException(
+        'Cannot delete an invoice that has posted payments; cancel it instead',
+      );
+    }
 
     return this.prisma.invoice.update({
       where: { id },
@@ -234,8 +247,16 @@ export class InvoicesService {
       }
 
       const invoiceNumber = await this.nextInvoiceNumber(cycle.periodStart);
-      const amount = subscription.servicePlan.monthlyPrice;
+      const amount =
+        subscription.monthlyAmount ?? subscription.servicePlan.monthlyPrice;
+      if (Number(amount) <= 0) {
+        skipped += 1;
+        continue;
+      }
       const status = dto.status ?? InvoiceStatus.issued;
+      const labelSuffix = subscription.label?.trim()
+        ? ` (${subscription.label.trim()})`
+        : '';
 
       await this.prisma.invoice.create({
         data: {
@@ -253,7 +274,7 @@ export class InvoicesService {
             create: [
               {
                 servicePlanId: subscription.servicePlanId,
-                description: `${subscription.servicePlan.name} - ${cycle.name}`,
+                description: `${subscription.servicePlan.name}${labelSuffix} - ${cycle.name}`,
                 quantity: 1,
                 unitPrice: amount,
                 amount,
@@ -323,6 +344,8 @@ export class InvoicesService {
           id: true,
           billingDay: true,
           status: true,
+          monthlyAmount: true,
+          label: true,
           servicePlan: {
             select: {
               id: true,

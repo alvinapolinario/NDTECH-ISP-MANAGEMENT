@@ -7,6 +7,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   createOltDevice,
   deleteOltDevice,
+  pollOltDevice,
+  testOltSnmp,
   updateOltDevice,
   useOltDevices,
 } from "@/hooks/use-olt-devices";
@@ -29,6 +31,7 @@ type OltForm = {
   uplinkPortCount: string;
   snmpVersion: SnmpVersion;
   snmpCommunity: string;
+  snmpPort: string;
   status: OltDeviceStatus;
   location: string;
   notes: string;
@@ -45,6 +48,7 @@ const emptyForm: OltForm = {
   uplinkPortCount: "0",
   snmpVersion: "v2c",
   snmpCommunity: "",
+  snmpPort: "161",
   status: "active",
   location: "",
   notes: "",
@@ -67,9 +71,7 @@ const ponOptions: Array<{ label: string; value: OltPonTechnology | "" }> = [
 ];
 
 const snmpOptions: Array<{ label: string; value: SnmpVersion }> = [
-  { label: "SNMP v1", value: "v1" },
   { label: "SNMP v2c", value: "v2c" },
-  { label: "SNMP v3", value: "v3" },
 ];
 
 function ponLabel(value: OltPonTechnology) {
@@ -88,6 +90,7 @@ function toPayload(form: OltForm) {
     uplinkPortCount: Number(form.uplinkPortCount || 0),
     snmpVersion: form.snmpVersion,
     snmpCommunity: form.snmpCommunity || null,
+    snmpPort: Number(form.snmpPort || 161),
     status: form.status,
     location: form.location || null,
     notes: form.notes || null,
@@ -105,6 +108,7 @@ export default function OltDevicesPage() {
   const [message, setMessage] = useState("");
   const [localError, setLocalError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
 
   const query = useMemo(
     () => ({ search, status, ponTechnology, page, limit: 10 }),
@@ -133,6 +137,7 @@ export default function OltDevicesPage() {
       uplinkPortCount: String(device.uplinkPortCount),
       snmpVersion: device.snmpVersion,
       snmpCommunity: device.snmpCommunity ?? "",
+      snmpPort: String(device.snmpPort ?? 161),
       status: device.status,
       location: device.location ?? "",
       notes: device.notes ?? "",
@@ -164,6 +169,48 @@ export default function OltDevicesPage() {
     }
   }
 
+  async function handleTestSnmp(device: OltDevice) {
+    setActionLoading(device.id);
+    setMessage("");
+    setLocalError("");
+    try {
+      const result = await testOltSnmp(device.id);
+      if (result.success) {
+        setMessage(
+          `SNMP OK (${result.latencyMs}ms) — ${result.sysName ?? result.sysDescr ?? "device responded"}`,
+        );
+      } else {
+        setLocalError(result.error ?? "SNMP test failed");
+      }
+      await reload();
+    } catch (caught) {
+      setLocalError(caught instanceof Error ? caught.message : "SNMP test failed");
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handlePoll(device: OltDevice) {
+    setActionLoading(device.id);
+    setMessage("");
+    setLocalError("");
+    try {
+      const result = await pollOltDevice(device.id);
+      if (result.success) {
+        setMessage(
+          `Poll complete (${result.latencyMs}ms). Updated ${result.onuUpdated} ONU(s); ${result.onuReadings.length} reading(s) from OLT.`,
+        );
+      } else {
+        setLocalError(result.error ?? "OLT poll failed");
+      }
+      await reload();
+    } catch (caught) {
+      setLocalError(caught instanceof Error ? caught.message : "OLT poll failed");
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   async function handleDelete(device: OltDevice) {
     if (!window.confirm(`Delete OLT device ${device.name}?`)) return;
     setSaving(true);
@@ -190,7 +237,7 @@ export default function OltDevicesPage() {
           </p>
           <h1 className="text-2xl font-semibold text-slate-950">OLT Devices</h1>
           <p className="max-w-3xl text-sm leading-6 text-slate-600">
-            Register optical line terminals with management, PON, port, and SNMP details.
+            Register VSOL and CDATA OLTs with SNMP v2c. Test connectivity and poll ONU optical levels from live devices.
           </p>
         </div>
         <button
@@ -304,6 +351,22 @@ export default function OltDevicesPage() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
+                        onClick={() => handleTestSnmp(device)}
+                        disabled={actionLoading === device.id}
+                        className="rounded-md border border-emerald-200 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        Test SNMP
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePoll(device)}
+                        disabled={actionLoading === device.id}
+                        className="rounded-md border border-sky-200 px-2.5 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                      >
+                        Poll
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => openEdit(device)}
                         className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-medium hover:bg-slate-50"
                       >
@@ -397,6 +460,7 @@ export default function OltDevicesPage() {
             <input
               required
               value={form.vendor}
+              placeholder="VSOL or CDATA"
               onChange={(event) => setForm((current) => ({ ...current, vendor: event.target.value }))}
               className="rounded-md border border-slate-200 px-3 py-2 text-sm"
             />
@@ -489,6 +553,18 @@ export default function OltDevicesPage() {
               value={form.snmpCommunity}
               onChange={(event) =>
                 setForm((current) => ({ ...current, snmpCommunity: event.target.value }))
+              }
+              className="rounded-md border border-slate-200 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+            SNMP Port
+            <input
+              type="number"
+              min="1"
+              value={form.snmpPort}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, snmpPort: event.target.value }))
               }
               className="rounded-md border border-slate-200 px-3 py-2 text-sm"
             />

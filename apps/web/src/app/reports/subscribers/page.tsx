@@ -43,10 +43,13 @@ export default function SubscriberReportsPage() {
         {
           key: "monthlyPrice",
           label: "Monthly Price",
-          render: (item) =>
-            formatMoney(
+          render: (item) => {
+            const effective = item.effectiveMonthlyPrice as string | undefined;
+            if (effective != null) return formatMoney(effective);
+            return formatMoney(
               (item.servicePlan as { monthlyPrice: string }).monthlyPrice,
-            ),
+            );
+          },
         },
         { key: "status", label: "Status" },
         {

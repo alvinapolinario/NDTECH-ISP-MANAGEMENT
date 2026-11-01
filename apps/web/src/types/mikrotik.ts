@@ -73,3 +73,68 @@ export type ListResponse<T> = {
   items: T[];
   meta: { total: number; page: number; limit: number };
 };
+
+export type SessionSource = "both" | "mikrotik" | "radius";
+
+export type UnifiedActiveSession = {
+  username: string;
+  customerName: string | null;
+  pppoeAccountId: number | null;
+  ipAddress: string | null;
+  macAddress: string | null;
+  routerName: string;
+  uptime: string | null;
+  mikrotikRxBytes: string | null;
+  mikrotikTxBytes: string | null;
+  radiusUploadBytes: string | null;
+  radiusDownloadBytes: string | null;
+  radiusTotalBytes: string | null;
+  sources: SessionSource[];
+  acctStartTime: string | null;
+  acctUpdateTime: string | null;
+  checkedAt: string | null;
+};
+
+export type TrafficRankingEntry = {
+  rank: number;
+  username: string;
+  customerName: string | null;
+  pppoeAccountId: number | null;
+  ipAddress: string | null;
+  macAddress: string | null;
+  uploadBytes: string;
+  downloadBytes: string;
+  totalBytes: string;
+  sessionCount: number;
+  sources: SessionSource[];
+};
+
+export type PppoeOnlineSummary = {
+  totalOnline: number;
+  routers: Array<{
+    id: number;
+    name: string;
+    host: string;
+    onlineCount: number;
+    lastRefreshedAt: string | null;
+  }>;
+  generatedAt: string;
+};
+
+export type PppoeSessionMonitoring = {
+  router: { id: number; name: string; host: string };
+  radiusConfigured: boolean;
+  summary: {
+    mikrotikActive: number;
+    radiusActive: number;
+    matched: number;
+    mikrotikOnly: number;
+    radiusOnly: number;
+    totalUnique: number;
+  };
+  trafficRanking?: TrafficRankingEntry[];
+  /** @deprecated Use trafficRanking */
+  topBandwidthUsers?: TrafficRankingEntry[];
+  sessions: UnifiedActiveSession[];
+  generatedAt: string;
+};

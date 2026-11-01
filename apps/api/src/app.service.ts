@@ -13,7 +13,7 @@ export class AppService {
           download: '/collector-sync/download',
           upload: '/collector-sync/upload',
         },
-        webApp: 'http://localhost:3001',
+        webApp: '/isp-billing/',
       },
     };
   }

@@ -53,6 +53,7 @@ export type Invoice = {
     id: number;
     billingDay: number;
     status: string;
+    monthlyAmount?: string | number | null;
     servicePlan: {
       id: number;
       code: string;

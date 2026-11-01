@@ -8,7 +8,7 @@ type IntegrationSetting = {
   key: string;
   label: string;
   description: string;
-  category: "sms" | "email" | "general";
+  category: "sms" | "email" | "general" | "payments";
   type: "secret" | "text" | "boolean";
   configured: boolean;
   value?: string;
@@ -22,6 +22,7 @@ const categoryLabels: Record<IntegrationSetting["category"], string> = {
   sms: "SMS (Semaphore)",
   email: "Email",
   general: "General",
+  payments: "Payment Gateways",
 };
 
 const sourceLabels: Record<IntegrationSetting["source"], string> = {

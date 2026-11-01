@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import type {
   CreateSubscriptionPayload,
+  PppoeAccountOptionsResponse,
   Subscription,
   SubscriptionListParams,
   SubscriptionListResponse,
@@ -33,6 +34,28 @@ export async function fetchSubscriptions(params: SubscriptionListParams = {}) {
 
 export async function fetchSubscription(id: number | string) {
   return apiRequest<Subscription>(`/subscriptions/${id}`);
+}
+
+export async function fetchPppoeAccountOptions(params: {
+  customerId?: number | string;
+  servicePlanId?: number | string;
+  excludeSubscriptionId?: number | string;
+  search?: string;
+  limit?: number;
+}) {
+  const query = new URLSearchParams();
+  if (params.customerId) query.set("customerId", String(params.customerId));
+  if (params.servicePlanId) {
+    query.set("servicePlanId", String(params.servicePlanId));
+  }
+  if (params.excludeSubscriptionId) {
+    query.set("excludeSubscriptionId", String(params.excludeSubscriptionId));
+  }
+  if (params.search) query.set("search", params.search);
+  query.set("limit", String(params.limit ?? 100));
+  return apiRequest<PppoeAccountOptionsResponse>(
+    `/subscriptions/pppoe-account-options?${query.toString()}`,
+  );
 }
 
 export async function createSubscription(payload: CreateSubscriptionPayload) {

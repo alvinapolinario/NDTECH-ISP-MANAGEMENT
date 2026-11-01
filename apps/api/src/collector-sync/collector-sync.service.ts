@@ -21,6 +21,7 @@ import {
   assertActiveStaffRole,
   STAFF_ROLES,
 } from '../common/staff-role';
+import { InvoiceLedgerService } from '../billing/invoice-ledger.service';
 import { PppoeAccountsService } from '../mikrotik/pppoe-accounts.service';
 import { getPagination } from '../common/pagination';
 import { markOverdueInvoices } from '../invoices/invoice-overdue';
@@ -100,6 +101,7 @@ export class CollectorSyncService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pppoeAccountsService: PppoeAccountsService,
+    private readonly invoiceLedger: InvoiceLedgerService,
   ) {}
 
   async download(user: AuthenticatedUser, query: CollectorSyncDownloadQueryDto) {
@@ -733,33 +735,11 @@ export class CollectorSyncService {
       rawPayload,
     );
 
-    const invoice = await this.prisma.invoice.findFirst({
-      where: { id: payload.invoiceId, deletedAt: null },
-      include: { collectionCase: true },
-    });
-
-    if (!invoice) {
-      throw new BadRequestException('Invoice not found');
-    }
-
-    if (invoice.status === InvoiceStatus.cancelled) {
-      throw new BadRequestException('Invoice is cancelled');
-    }
-
-    if (invoice.status === InvoiceStatus.paid || Number(invoice.balance) <= 0) {
-      throw new BadRequestException('Invoice is already fully paid');
-    }
-
-    const currentBalance = Number(invoice.balance);
-    let amount = payload.amount;
-    let resultStatus: CollectorMobileEventStatus =
-      CollectorMobileEventStatus.accepted;
-    let message = 'Payment posted';
-
-    if (amount > currentBalance) {
-      amount = currentBalance;
-      resultStatus = CollectorMobileEventStatus.adjusted;
-      message = `Payment adjusted to remaining balance (${amount})`;
+    if (
+      payload.paymentMethod === PaymentMethod.cash &&
+      !collectorUserId
+    ) {
+      throw new BadRequestException('Cash payments require a collector');
     }
 
     const collector = await this.prisma.user.findUnique({
@@ -771,74 +751,179 @@ export class CollectorSyncService {
       throw new BadRequestException('Collector not found');
     }
 
-    const noteParts = [
-      payload.notes?.trim(),
-      payload.localReceiptNumber
-        ? `Mobile receipt: ${payload.localReceiptNumber}`
-        : null,
-      `Device: ${deviceId}`,
-    ].filter(Boolean);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Reserve localId first so retries cannot double-post payments.
+        let event;
+        try {
+          event = await tx.collectorMobileEvent.create({
+            data: {
+              localId,
+              collectorUserId,
+              deviceId,
+              eventType: CollectorMobileEventType.payment,
+              eventPayload: rawPayload as Prisma.InputJsonValue,
+              resultStatus: CollectorMobileEventStatus.accepted,
+              resultMessage: 'Processing',
+            },
+          });
+        } catch (error) {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002'
+          ) {
+            throw new BadRequestException('EVENT_LOCAL_ID_TAKEN');
+          }
+          throw error;
+        }
 
-    const payment = await this.prisma.payment.create({
-      data: {
-        paymentNumber: await this.nextPaymentNumber(),
-        invoiceId: invoice.id,
-        customerId: invoice.customerId,
-        amount,
-        paymentDate: new Date(payload.paymentDate),
-        paymentMethod: payload.paymentMethod,
-        referenceNumber: payload.referenceNumber,
-        receivedBy: collector.name,
-        collectorUserId: collector.id,
-        notes: noteParts.length ? noteParts.join('\n') : null,
-      },
-    });
+        await this.invoiceLedger.lockInvoice(tx, payload.invoiceId);
 
-    await this.recalculateInvoice(invoice.id, payment.id);
+        const invoice = await tx.invoice.findFirst({
+          where: { id: payload.invoiceId, deletedAt: null },
+          include: { collectionCase: true },
+        });
 
-    let collectionCaseId = invoice.collectionCase?.id ?? null;
-    if (collectionCaseId) {
-      const refreshedInvoice = await this.prisma.invoice.findUnique({
-        where: { id: invoice.id },
+        if (!invoice) {
+          throw new BadRequestException('Invoice not found');
+        }
+
+        if (invoice.status === InvoiceStatus.cancelled) {
+          throw new BadRequestException('Invoice is cancelled');
+        }
+
+        const ledgerBefore = await this.invoiceLedger.recalculate(invoice.id, {
+          client: tx,
+        });
+        const currentBalance = Number(
+          ledgerBefore?.balance ?? invoice.balance,
+        );
+
+        if (currentBalance <= 0) {
+          throw new BadRequestException('Invoice is already fully paid');
+        }
+
+        let amount = payload.amount;
+        let resultStatus: CollectorMobileEventStatus =
+          CollectorMobileEventStatus.accepted;
+        let message = 'Payment posted';
+
+        if (amount > currentBalance) {
+          amount = currentBalance;
+          resultStatus = CollectorMobileEventStatus.adjusted;
+          message = `Payment adjusted to remaining balance (${amount})`;
+        }
+
+        const noteParts = [
+          payload.notes?.trim(),
+          payload.localReceiptNumber
+            ? `Mobile receipt: ${payload.localReceiptNumber}`
+            : null,
+          `Device: ${deviceId}`,
+        ].filter(Boolean);
+
+        const payment = await tx.payment.create({
+          data: {
+            paymentNumber: await this.nextPaymentNumber(tx),
+            invoiceId: invoice.id,
+            customerId: invoice.customerId,
+            amount,
+            paymentDate: new Date(payload.paymentDate),
+            paymentMethod: payload.paymentMethod,
+            referenceNumber: payload.referenceNumber,
+            receivedBy: collector.name,
+            collectorUserId: collector.id,
+            notes: noteParts.length ? noteParts.join('\n') : null,
+          },
+        });
+
+        const ledgerAfter = await this.invoiceLedger.recalculate(invoice.id, {
+          client: tx,
+        });
+
+        let collectionCaseId = invoice.collectionCase?.id ?? null;
+        if (collectionCaseId) {
+          const nextStatus =
+            ledgerAfter?.status === InvoiceStatus.paid
+              ? CollectionCaseStatus.resolved
+              : CollectionCaseStatus.contacted;
+
+          await tx.collectionCase.update({
+            where: { id: collectionCaseId },
+            data: {
+              status: nextStatus,
+              lastContactedAt: new Date(payload.paymentDate),
+            },
+          });
+        }
+
+        await tx.collectorMobileEvent.update({
+          where: { id: event.id },
+          data: {
+            resultStatus,
+            resultMessage: message,
+            paymentId: payment.id,
+            collectionCaseId,
+          },
+        });
+
+        return {
+          localId,
+          status: resultStatus,
+          message,
+          paymentId: payment.id,
+          paymentNumber: payment.paymentNumber,
+          collectionCaseId: collectionCaseId ?? undefined,
+          adjustedAmount:
+            resultStatus === CollectorMobileEventStatus.adjusted
+              ? amount
+              : undefined,
+          _ledgerAfter: ledgerAfter,
+        };
+      }).then(async (result) => {
+        const { _ledgerAfter, ...syncResult } = result as SyncEventResult & {
+          _ledgerAfter?: {
+            previousStatus: InvoiceStatus;
+            status: InvoiceStatus;
+          } | null;
+        };
+
+        if (
+          _ledgerAfter?.status === InvoiceStatus.paid &&
+          _ledgerAfter.previousStatus !== InvoiceStatus.paid &&
+          syncResult.paymentId
+        ) {
+          await this.pppoeAccountsService.restoreAfterPayment(
+            payload.invoiceId,
+            syncResult.paymentId,
+          );
+        }
+
+        return syncResult;
       });
+    } catch (error) {
+      if (
+        error instanceof BadRequestException &&
+        error.message === 'EVENT_LOCAL_ID_TAKEN'
+      ) {
+        const existing = await this.prisma.collectorMobileEvent.findUnique({
+          where: { localId },
+          include: {
+            payment: { select: { id: true, paymentNumber: true } },
+          },
+        });
 
-      const nextStatus =
-        refreshedInvoice?.status === InvoiceStatus.paid
-          ? CollectionCaseStatus.resolved
-          : CollectionCaseStatus.contacted;
-
-      await this.prisma.collectionCase.update({
-        where: { id: collectionCaseId },
-        data: {
-          status: nextStatus,
-          lastContactedAt: new Date(payload.paymentDate),
-        },
-      });
+        return {
+          localId,
+          status: CollectorMobileEventStatus.duplicate,
+          message: 'Event already processed',
+          paymentId: existing?.paymentId ?? undefined,
+          paymentNumber: existing?.payment?.paymentNumber,
+          collectionCaseId: existing?.collectionCaseId ?? undefined,
+        };
+      }
+      throw error;
     }
-
-    await this.prisma.collectorMobileEvent.create({
-      data: {
-        localId,
-        collectorUserId,
-        deviceId,
-        eventType: CollectorMobileEventType.payment,
-        eventPayload: rawPayload as Prisma.InputJsonValue,
-        resultStatus,
-        resultMessage: message,
-        paymentId: payment.id,
-        collectionCaseId,
-      },
-    });
-
-    return {
-      localId,
-      status: resultStatus,
-      message,
-      paymentId: payment.id,
-      paymentNumber: payment.paymentNumber,
-      collectionCaseId: collectionCaseId ?? undefined,
-      adjustedAmount: resultStatus === CollectorMobileEventStatus.adjusted ? amount : undefined,
-    };
   }
 
   private async processCollectionUpdateEvent(
@@ -1310,65 +1395,26 @@ export class CollectorSyncService {
     return createHash('sha256').update(digest).digest('hex');
   }
 
-  private async postedTotalForInvoice(invoiceId: number) {
-    const aggregate = await this.prisma.payment.aggregate({
-      where: {
-        invoiceId,
-        status: PaymentStatus.posted,
-        deletedAt: null,
-      },
-      _sum: { amount: true },
-    });
-
-    return aggregate._sum.amount ?? new Prisma.Decimal(0);
-  }
-
-  private async recalculateInvoice(invoiceId: number, paymentId?: number) {
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id: invoiceId },
-    });
-
-    if (!invoice) return;
-
-    const previousStatus = invoice.status;
-    const amountPaid = await this.postedTotalForInvoice(invoiceId);
-    const balance = Prisma.Decimal.max(
-      new Prisma.Decimal(0),
-      invoice.total.minus(amountPaid),
-    );
-    const status =
-      balance.equals(0) && amountPaid.greaterThan(0)
-        ? InvoiceStatus.paid
-        : amountPaid.greaterThan(0)
-          ? InvoiceStatus.partially_paid
-          : invoice.status === InvoiceStatus.draft
-            ? InvoiceStatus.draft
-            : InvoiceStatus.issued;
-
-    await this.prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        amountPaid,
-        balance,
-        status,
-      },
-    });
-
-    if (
-      status === InvoiceStatus.paid &&
-      previousStatus !== InvoiceStatus.paid
-    ) {
-      await this.pppoeAccountsService.restoreAfterPayment(invoiceId, paymentId);
-    }
-  }
-
-  private async nextPaymentNumber() {
+  private async nextPaymentNumber(
+    client: Prisma.TransactionClient | PrismaService,
+  ) {
     const now = new Date();
     const prefix = `PAY-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const count = await this.prisma.payment.count({
-      where: { paymentNumber: { startsWith: prefix } },
-    });
 
-    return `${prefix}-${String(count + 1).padStart(4, '0')}`;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const count = await client.payment.count({
+        where: { paymentNumber: { startsWith: prefix } },
+      });
+      const candidate = `${prefix}-${String(count + 1 + attempt).padStart(4, '0')}`;
+      const exists = await client.payment.findUnique({
+        where: { paymentNumber: candidate },
+        select: { id: true },
+      });
+      if (!exists) {
+        return candidate;
+      }
+    }
+
+    return `${prefix}-${Date.now()}`;
   }
 }
